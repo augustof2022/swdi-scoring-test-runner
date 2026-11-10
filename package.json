@@ -1,0 +1,20 @@
+{
+  "name": "swdi-scoring-test-runner",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Test runner for Enhanced SWDI scoring in the SWDI App and 4Ps Forward: scoring engine (target + Stata rule sets), guided test planner, Apps Script web app over a Google Sheet.",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node --test tests/*.test.js",
+    "deploy": "node scripts/deploy.js",
+    "login": "clasp login",
+    "regen": "node scripts/gen-scenarios.js && node scripts/build.js",
+    "catalog": "node scripts/catalog.js && node scripts/gen-scenarios.js"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

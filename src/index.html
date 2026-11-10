@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SWDI Scoring Test Runner</title>
+<style>
+:root{--navy:#1f3a5f;--navy2:#2b4c77;--teal:#0f766e;--ink:#1d2733;--muted:#5d6b7a;--line:#dfe5ec;--bg:#f4f6f9;--card:#fff;
+--pass:#1b7f4b;--passbg:#e2f5ea;--fail:#b42318;--failbg:#fde4e2;--amber:#9a6200;--amberbg:#fff3d6;--blue:#1d5fb4;--bluebg:#e3eefc;}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+button,input,select,textarea{font:inherit;color:inherit}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:10px 18px;background:var(--navy);color:#fff;min-height:48px}
+.top h1{font-size:16px;margin:0;font-weight:650}.sp{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.14);font-size:12px;white-space:nowrap}
+.top input{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:3px 7px}
+.wrap{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 48px)}
+aside{border-right:1px solid var(--line);background:#fff;overflow:auto;max-height:calc(100vh - 48px);position:sticky;top:48px;padding:10px}
+.navbtn{display:block;width:100%;text-align:left;border:1px solid transparent;background:none;border-radius:8px;padding:8px 10px;cursor:pointer;margin-bottom:2px}
+.navbtn:hover{background:#f1f4f8}.navbtn.on{background:#e8eef6;border-color:#cfdbe9}
+.navbtn .t{font-weight:600}.navbtn .s{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap}
+.newbtn{width:100%;margin:6px 0 10px}
+.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:12px 4px 4px}
+main{padding:18px 22px 100px;min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+h2{font-size:19px;margin:0 0 4px}h3{font-size:15px;margin:0 0 10px}h4{margin:0 0 6px;font-size:14px}
+.muted{color:var(--muted)}.small{font-size:12px}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:#eef1f5;color:#3a4756;white-space:nowrap}
+.v-PASS{background:var(--passbg);color:var(--pass)}.v-FAIL{background:var(--failbg);color:var(--fail)}
+.v-STATA{background:var(--amberbg);color:var(--amber)}.v-ROUNDING{background:var(--amberbg);color:var(--amber)}.v-NA{background:var(--bluebg);color:var(--blue)}.v-CHECK{background:var(--bluebg);color:var(--blue)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}.kpi b{display:block;font-size:24px;line-height:1.1}.kpi .lab{font-size:12px;color:var(--muted)}
+table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;background:#fafbfd}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:12px 0 14px;flex-wrap:wrap}
+.tab{border:none;background:none;padding:9px 14px;border-bottom:3px solid transparent;cursor:pointer;font-weight:600;color:var(--muted)}
+.tab.on{color:var(--navy);border-color:var(--navy)}
+.btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 12px;cursor:pointer}
+.btn:hover{background:#f5f7fa}.btn.pri{background:var(--navy);border-color:var(--navy);color:#fff}.btn.pri:hover{background:var(--navy2)}
+.btn.sm{padding:3px 8px;font-size:12px}.btn.danger{color:var(--fail)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}.field input,.field select,.field textarea{border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--ink);font-size:14px;min-width:150px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{border:none;background:#fff;padding:6px 12px;cursor:pointer}.seg button.on{background:var(--navy);color:#fff}
+.roster input,.roster select{border:1px solid var(--line);border-radius:6px;padding:4px 6px;width:100%}
+details.sec{border:1px solid var(--line);border-radius:9px;margin-bottom:8px;background:#fff}
+details.sec>summary{cursor:pointer;padding:9px 12px;font-weight:650;display:flex;gap:8px;align-items:center;list-style:none}
+details.sec>summary::-webkit-details-marker{display:none}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:2px 16px;padding:4px 12px 12px}
+.f{display:flex;flex-direction:column;gap:3px;padding:7px 8px;border-radius:7px}
+.f.sug{background:#f4f9ff}.f.chg{background:#fff6e0}
+.f .q{font-size:12.5px}.f .v{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:var(--muted)}
+.f select,.f input[type=number]{border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%}
+.f .opts{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px}
+.tg{font-size:11px;color:#1d5fb4}.tg b{font-weight:600}.chgnote{font-size:11px;color:#8a5a00}
+.mcard{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:#fff;overflow:hidden}
+.mhead{display:flex;gap:12px;align-items:center;padding:10px 12px;background:#f7f9fc;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.mhead .nm{font-weight:700}
+.sticky{position:sticky;bottom:0;background:rgba(244,246,249,.96);padding:10px 0;margin-top:10px;display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);z-index:5}
+.heat{overflow:auto}.heat table{width:auto}.heat td,.heat th{padding:4px 6px;font-size:12px;border:1px solid #eef1f5;text-align:center;min-width:52px}
+.heat td.l{text-align:left;min-width:230px;white-space:nowrap}.heat td.c{cursor:pointer}.heat td.c:hover{outline:2px solid var(--navy)}
+.cf{box-shadow:inset 0 -3px 0 #e2a400}
+.vin{width:86px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:right}
+.banner{border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px}.banner.warn{background:var(--amberbg);color:#6d4a00}.banner.info{background:var(--bluebg);color:#173f73}
+textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12.5px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.ind{border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:10px;overflow:hidden}
+.ind .h{display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid #eef1f5;flex-wrap:wrap}
+.ind .h .lv{margin-left:auto;display:flex;gap:8px;align-items:center}
+.big{font-size:18px;font-weight:700;min-width:44px;text-align:right}
+.why{padding:8px 12px;font-size:13px}.why .fam{background:#f7f9fc;border-radius:6px;padding:6px 8px;margin-bottom:6px}
+.mtab td{font-size:12.5px;padding:4px 6px}.mtab tr.ex td{color:#8a96a3}
+.crit{font-size:12.5px;padding:0 12px 10px}.crit li{margin:2px 0}
+.toast{position:fixed;right:18px;bottom:18px;background:#1d2733;color:#fff;padding:10px 14px;border-radius:8px;opacity:0;transform:translateY(8px);transition:.2s;z-index:50}
+.toast.on{opacity:1;transform:none}
+.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;align-items:center}
+.tchip{display:inline-block;font-size:11px;background:#e3eefc;color:#173f73;border-radius:4px;padding:0 5px;margin:1px 3px 1px 0}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;max-height:none}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>SWDI Scoring Test Runner</h1>
+  <span class="chip" id="modeChip">loading…</span>
+  <span class="sp"></span>
+  <span class="chip" id="thChip"></span>
+  <label class="chip">Tester <input id="tester" list="testerList" placeholder="your name" style="width:150px"><datalist id="testerList"></datalist></label>
+</div>
+<div class="wrap">
+  <aside>
+    <button class="btn pri newbtn" id="newRun">+ New test run</button>
+    <button class="navbtn" data-view="overview"><div class="t">Overview &amp; coverage</div><div class="s">Progress, matrix, scenarios</div></button>
+    <button class="navbtn" data-view="criteria"><div class="t">Scoring criteria</div><div class="s">Levels, coverage, weights per indicator</div></button>
+    <div class="lbl">Test runs</div>
+    <div id="runList"></div>
+  </aside>
+  <main id="main"><div class="card">Loading…</div></main>
+</div>
+<div class="toast" id="toast"></div>
+<script>/*ENGINE*/</script>
+<script>/*PLANNER*/</script>
+<script>/*FIELDS*/</script>
+<script>/*SCENARIOS*/</script>
+<script>
+var DEMO = /*DEMO*/null;
+var IND = SWDI.INDICATORS, FIELDS = SWDIFields.FIELDS, LISTS = SWDIFields.LISTS, SC = SWDIScenarios;
+var TOTALS = [{ code: 'ES', name: 'Raw ES score' }, { code: 'SA', name: 'Raw SA score' }, { code: 'TOTAL', name: 'TOTAL SWDI score' }, { code: 'LOWB', name: 'LOWB (1-3)' }];
+var STATUSES = ['Draft', 'Entering in SWDI App', 'Synced — verify scores', 'Verified in SWDI App', 'Verified in 4Ps Forward', 'Blocked'];
+var STATA_NOTES = { A: 'Stata covers 18+ only and reads gradel (currently attending) only.', C: 'Stata: family size = all captured members − OFW; under-15 income counted; no imputed rent.',
+  E: 'Stata counts insurance and accounts separately (A insurance + B account stays Level 2).', F: 'Stata Level 1 has no "got sick" qualifier.', G: 'Stata: not sick → Level 3 even if confined/chronic = Yes.',
+  H: 'Stata ignores overweightind, and moderate overwrites severe.', I: 'Stata keeps piped (11, 12) in the > 30 min rule; blank minutes count as > 30.', J: 'Stata operator precedence: any toilet with shared = No passes the Level 2 line.',
+  L: 'Stata overwrite turns all-No (Level 1) into Level 2.', O: 'Stata overwrite ignores hazard-prone (light → 2, strong → 3).', P: 'Stata overwrite ignores hazard-prone.', U: 'Stata: any resolved problem overwrites to Level 3 (no worst case).',
+  V: 'Stata: 1 or more members → Level 2 (DSWD asked for exactly 1).', W: 'Stata: any vaccine counts, enrolment only, needs all 4 for Level 3.', Y: 'Stata: any kit item counts, savings not counted, volcanic eruption missing; 3 items without savings → no level.' };
+var ALIASES = { A: ['employable skill'], B: ['employment'], C: ['income'], D: ['social security', 'sss/gsis', 'sss'], E: ['financial institution'],
+  F: ['availment', 'accessible health', 'health service'], G: ['health condition'], H: ['nutrition'], I: ['drinking water', 'improved water'], J: ['sanitary', 'toilet', 'sanitation'],
+  K: ['garbage'], L: ['functional literacy'], M: ['digital literacy'], N: ['school', 'attendance', 'enrolment', 'enrollment'], O: ['roof'], P: ['outer wall', 'walls'],
+  Q: ['tenure'], R: ['lighting'], S: ['ownership of assets', 'assets'], T: ['parenting'], U: ['discern', 'arrive at solutions'], V: ['participation', 'organization'],
+  W: ['rights of children', "children's rights", 'children rights'], X: ['gender'], Y: ['disaster', 'drrm'] };
+var S = { data: null, view: 'overview', run: null, tab: 'roster', live: false, showAll: false, dirty: false };
+
+// ---------- utils ----------
+function $(s, r) { return (r || document).querySelector(s); }
+function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function num(v) { return SWDI.num(v); }
+function fmt(x, d) { if (x === null || x === undefined || x === '') return '—'; var n = Number(x); if (isNaN(n)) return esc(x); d = d === undefined ? 4 : d; return Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(d).replace(/0+$/, '').replace(/\.$/, ''); }
+function lvlTxt(x) { return x === null || x === undefined || x === '' ? 'N/A' : fmt(x, 2); }
+function toast(t) { var e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(e._t); e._t = setTimeout(function () { e.classList.remove('on'); }, 2600); }
+function vcls(v) { return v === 'PASS' ? 'v-PASS' : v === 'FAIL' ? 'v-FAIL' : v === 'STATA RULE' ? 'v-STATA' : v === 'ROUNDING' ? 'v-ROUNDING' : v === 'N/A CHECK' ? 'v-NA' : v === 'CHECK' ? 'v-CHECK' : ''; }
+function pill(v) { return v ? '<span class="pill ' + vcls(v) + '">' + esc(v) + '</span>' : ''; }
+function store(k, v) { try { localStorage.setItem('swdi-runner-' + k, JSON.stringify(v)); } catch (e) {} }
+function load(k) { try { return JSON.parse(localStorage.getItem('swdi-runner-' + k)); } catch (e) { return null; } }
+function th() { var c = S.data.config, R = S.run; if (R && R.food !== '' && R.food !== undefined && R.pov !== '' && R.pov !== undefined) return { food: num(R.food), poverty: num(R.pov) }; return { food: num(c.food_threshold), poverty: num(c.poverty_threshold) }; }
+function tester() { return $('#tester').value; }
+function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function listLabel(list, v) { var L = LISTS[list] || {}; return L[String(v)] || ''; }
+
+// ---------- server bridge ----------
+function call(fn, args, ok) {
+  if (S.live) {
+    var r = google.script.run.withSuccessHandler(function (x) { ok && ok(x); }).withFailureHandler(function (e) { toast('Error: ' + e.message); });
+    r[fn].apply(r, args);
+  } else demoCall(fn, args, ok);
+}
+function demoCall(fn, args, ok) {
+  var db = load('db') || { runs: [], roster: [], entries: [], scores: [] };
+  if (fn === 'getRun') { var id = args[0], f = function (r) { return r['Run ID'] === id; }; ok(JSON.stringify({ roster: db.roster.filter(f), entries: db.entries.filter(f), scores: db.scores.filter(f) })); return; }
+  if (fn === 'saveRun') {
+    var p = JSON.parse(args[0]), run = p.run;
+    if (!run['Run ID']) { var d = today().replace(/-/g, ''), n = db.runs.filter(function (r) { return String(r['Run ID']).indexOf('RUN-' + d) === 0; }).length + 1; run['Run ID'] = 'RUN-' + d + '-' + ('0' + n).slice(-2); }
+    var id2 = run['Run ID'], stamp = function (rows) { return rows.map(function (r) { r['Run ID'] = id2; r.Key = id2 + '|' + r.Key.split('|').slice(1).join('|'); return r; }); };
+    db.runs = db.runs.filter(function (r) { return r['Run ID'] !== id2; }).concat([run]);
+    ['roster', 'entries', 'scores'].forEach(function (k) { db[k] = db[k].filter(function (r) { return r['Run ID'] !== id2; }).concat(stamp(p[k] || [])); });
+    store('db', db); S.data.runs = db.runs; S.data.scores = db.scores; ok(id2); return;
+  }
+  if (fn === 'deleteRun') { var rid = args[0]; ['runs', 'roster', 'entries', 'scores'].forEach(function (k) { db[k] = db[k].filter(function (r) { return r['Run ID'] !== rid; }); }); store('db', db); S.data.runs = db.runs; S.data.scores = db.scores; ok(true); }
+}
+
+// ---------- coverage ----------
+function finalVerdict(r) {
+  var vs = [r['SWDI App verdict'], r['4Ps Forward verdict']].filter(Boolean);
+  if (!vs.length) return '';
+  if (vs.indexOf('FAIL') >= 0) return 'FAIL';
+  if (vs.indexOf('STATA RULE') >= 0) return 'STATA RULE';
+  if (vs.indexOf('ROUNDING') >= 0) return 'ROUNDING';
+  if (vs.indexOf('N/A CHECK') >= 0) return 'N/A CHECK';
+  return 'PASS';
+}
+function coverage() {
+  var cov = {};
+  (S.data.scores || []).forEach(function (r) {
+    var v = finalVerdict(r);
+    String(r['Scenarios exercised'] || '').split('|').filter(Boolean).forEach(function (id) { (cov[id] = cov[id] || { runs: {}, v: [] }).runs[r['Run ID']] = 1; if (v) cov[id].v.push(v); });
+  });
+  return cov;
+}
+function scenarioStatus(c) {
+  if (!c) return 'Not tested';
+  if (c.v.indexOf('FAIL') >= 0) return 'FAIL';
+  if (c.v.indexOf('STATA RULE') >= 0) return 'STATA RULE';
+  if (c.v.indexOf('PASS') >= 0) return 'PASS';
+  if (c.v.length) return 'CHECK';
+  return 'Planned';
+}
+
+// ---------- run model ----------
+function newRun() {
+  return { id: '', fam: '', mode: 'Guided', date: today(), status: 'Draft', notes: '', food: S.data.config.food_threshold, pov: S.data.config.poverty_threshold, roster: [{ no: 1, name: '', age: '', sex: 2, reln: 1, status: 1 }],
+    values: { hh: {}, m: {} }, suggested: { hh: {}, m: {} }, targets: {}, obs: { swdi: {}, fpf: {}, mode: { swdi: 'level', fpf: 'level' } }, planned: false };
+}
+function engineHousehold(run) {
+  return { hh: run.values.hh, members: run.roster.filter(function (r) { return r.age !== '' && r.age !== null; }).map(function (r) {
+    return Object.assign({ no: Number(r.no), name: r.name, age: Number(r.age), status: Number(r.status) || 1 }, run.values.m[r.no] || {});
+  }) };
+}
+function expectedFor(run) { return SWDI.scoreBoth(engineHousehold(run), { thresholds: th() }); }
+
+// ---------- sidebar ----------
+function renderNav() {
+  var cov = (S.data.scores || []), runs = (S.data.runs || []).slice().sort(function (a, b) { return String(b['Run ID']).localeCompare(String(a['Run ID'])); });
+  $('#runList').innerHTML = (S.view === 'run' && S.run && !S.run.id ? '<button class="navbtn on"><div class="t">New run (unsaved)</div><div class="s">' + esc(S.run.fam || 'Family ID not set') + '</div></button>' : '') +
+    (runs.length ? runs.map(function (r) {
+      var id = r['Run ID'], rs = cov.filter(function (x) { return x['Run ID'] === id; });
+      var pass = rs.filter(function (x) { return finalVerdict(x) === 'PASS'; }).length, bad = rs.filter(function (x) { var v = finalVerdict(x); return v && v !== 'PASS'; }).length;
+      return '<button class="navbtn' + (S.view === 'run' && S.run && S.run.id === id ? ' on' : '') + '" data-run="' + esc(id) + '"><div class="t">' + esc(id) + '</div><div class="s"><span>' + esc(r['Family ID (HHID)'] || '—') + '</span>' +
+        '<span class="pill">' + esc(r.Mode || '') + '</span><span>' + esc(r.Status || '') + '</span>' + (pass ? '<span class="pill v-PASS">' + pass + ' pass</span>' : '') + (bad ? '<span class="pill v-FAIL">' + bad + ' issue</span>' : '') + '</div></button>';
+    }).join('') : '<p class="small muted" style="padding:0 6px">No runs yet. Start with “New test run”.</p>');
+  $$('.navbtn[data-view]').forEach(function (b) { b.classList.toggle('on', S.view === b.dataset.view); });
+}
+
+// ---------- overview ----------
+function kpi(b, s) { return '<div class="kpi"><b>' + b + '</b><span class="lab">' + s + '</span></div>'; }
+function renderOverview() {
+  var R = S.data.scores || [], runs = S.data.runs || [], cov = coverage();
+  var exe = R.filter(function (r) { return finalVerdict(r); }), cnt = function (v) { return exe.filter(function (r) { return finalVerdict(r) === v; }).length; };
+  var tested = SC.filter(function (s) { var st = scenarioStatus(cov[s.id]); return st !== 'Not tested' && st !== 'Planned'; }).length;
+  var planned = SC.filter(function (s) { return cov[s.id]; }).length;
+  var html = '<h2>Overview</h2><p class="muted">' + runs.length + ' test run(s) · ' + SC.length + ' scenarios in the catalog (levels, boundaries, option spread, rule conflicts, open rules).</p><div class="kpis">' +
+    kpi(runs.filter(function (r) { return r.Status === 'Verified in 4Ps Forward'; }).length + ' / ' + runs.length, 'runs verified in 4Ps Forward') + kpi(exe.length, 'indicator checks executed') +
+    kpi('<span style="color:var(--pass)">' + cnt('PASS') + '</span>', 'PASS') + kpi('<span style="color:var(--fail)">' + cnt('FAIL') + '</span>', 'FAIL') +
+    kpi('<span style="color:var(--amber)">' + (cnt('STATA RULE') + cnt('ROUNDING')) + '</span>', 'STATA RULE / ROUNDING') +
+    kpi(Math.round(100 * tested / SC.length) + '%', 'scenarios verified (' + tested + '/' + SC.length + '); ' + planned + ' exercised') + '</div>';
+  if (runs.length) {
+    var rs = runs.slice().sort(function (a, b) { return String(a['Run ID']).localeCompare(String(b['Run ID'])); });
+    html += '<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3>Indicator × test run</h3><div class="legend">' + pill('PASS') + pill('FAIL') + pill('STATA RULE') + pill('ROUNDING') + pill('N/A CHECK') +
+      '<span class="pill cf">rule conflict</span><span class="muted">cell = expected level</span></div></div><div class="heat"><table><tr><th></th>' + rs.map(function (r) { return '<th title="' + esc(r['Family ID (HHID)']) + '">' + esc(String(r['Run ID']).slice(-11)) + '</th>'; }).join('') + '</tr>';
+    IND.concat([TOTALS[2], TOTALS[3]]).forEach(function (d) {
+      html += '<tr><td class="l"><b>' + d.code + '</b> ' + esc(d.name) + '</td>' + rs.map(function (r) {
+        var x = R.filter(function (s) { return s['Run ID'] === r['Run ID'] && s.Code === d.code; })[0]; if (!x) return '<td></td>';
+        var v = finalVerdict(x), e = x['Expected level (target)'];
+        return '<td class="c ' + vcls(v) + (x['Rule conflict'] === true || x['Rule conflict'] === 'TRUE' ? ' cf' : '') + '" data-run="' + esc(r['Run ID']) + '" data-tab="verify">' + (e === '' || e === null ? 'N/A' : fmt(e, 2)) + '</td>';
+      }).join('') + '</tr>';
+    });
+    html += '</table></div></div>';
+  }
+  var kinds = {}; SC.forEach(function (s) { kinds[s.kind] = 1; });
+  html += '<div class="card"><div class="row" style="justify-content:space-between"><h3>Scenario coverage</h3><div class="row">' +
+    '<select id="scInd" class="btn sm"><option value="">All indicators</option>' + IND.map(function (d) { return '<option value="' + d.code + '">' + d.code + ' ' + esc(d.name) + '</option>'; }).join('') + '<option value="LOWB">Overall / LOWB</option></select>' +
+    '<select id="scKind" class="btn sm"><option value="">All kinds</option>' + Object.keys(kinds).map(function (k) { return '<option>' + esc(k) + '</option>'; }).join('') + '</select>' +
+    '<select id="scSt" class="btn sm"><option value="">Any status</option><option>Not tested</option><option>Planned</option><option>PASS</option><option>FAIL</option><option>STATA RULE</option><option>CHECK</option></select>' +
+    '<input id="scQ" class="btn sm" placeholder="Search…" style="min-width:150px"></div></div><div id="scTable" style="max-height:560px;overflow:auto;margin-top:8px"></div></div>';
+  $('#main').innerHTML = html;
+  ['scInd', 'scKind', 'scSt', 'scQ'].forEach(function (id) { $('#' + id).addEventListener('input', function () { renderScenarios(cov); }); });
+  renderScenarios(cov);
+}
+function renderScenarios(cov) {
+  var fi = $('#scInd').value, fk = $('#scKind').value, fs = $('#scSt').value, q = $('#scQ').value.toLowerCase();
+  var rows = SC.map(function (s) { return [s, scenarioStatus(cov[s.id]), cov[s.id]]; }).filter(function (x) {
+    var s = x[0]; return (!fi || s.ind === fi) && (!fk || s.kind === fk) && (!fs || x[1] === fs) && (!q || (s.id + ' ' + s.desc + ' ' + s.needs).toLowerCase().indexOf(q) >= 0);
+  });
+  $('#scTable').innerHTML = '<table><tr><th>Status</th><th>Ind.</th><th>What is being tested</th><th>Needs</th><th>Runs</th></tr>' + rows.map(function (x) {
+    var s = x[0], c = x[2];
+    return '<tr><td>' + (x[1] === 'Not tested' || x[1] === 'Planned' ? '<span class="pill">' + x[1] + '</span>' : pill(x[1])) + '</td><td>' + s.ind + '</td><td>' + esc(s.desc) + '<div class="small muted">' + esc(s.kind) + ' · ' + esc(s.id) + '</div></td><td class="small">' + esc(s.needs) +
+      '</td><td class="small">' + (c ? Object.keys(c.runs).map(function (r) { return '<a href="#" data-run="' + esc(r) + '">' + esc(r.slice(-11)) + '</a>'; }).join(', ') : '') + '</td></tr>';
+  }).join('') + '</table><p class="small muted">' + rows.length + ' shown</p>';
+}
+
+// ---------- criteria ----------
+function renderCriteria() {
+  var cov = coverage();
+  $('#main').innerHTML = '<h2>Scoring criteria</h2><p class="muted">Indicator weights (ES 0.3333, SA 0.6669), coverage and level criteria used by the engine (Criteria for the Levels of Well-Being + DSWD comments in BRVD). LOWB: total ≥ 2.83 → Level 3; ≥ 1.83 → Level 2; else Level 1.</p>' +
+    IND.map(function (d) {
+      var sc = SC.filter(function (s) { return s.ind === d.code; }), done = sc.filter(function (s) { return cov[s.id]; }).length;
+      return '<div class="ind"><div class="h"><b>' + d.code + '</b><span>' + esc(d.name) + '</span><span class="pill">' + d.dim + ' · weight ' + d.w.toFixed(4) + '</span><span class="pill">' + esc(d.cov) + '</span><span class="pill">family: ' + esc(d.agg) + '</span>' +
+        '<span class="lv small muted">' + done + '/' + sc.length + ' scenarios exercised</span></div><ul class="crit">' + [1, 2, 3].map(function (l) { return '<li><b>Level ' + l + ':</b> ' + esc(d.criteria[l]) + '</li>'; }).join('') + '</ul>' +
+        (STATA_NOTES[d.code] ? '<div class="crit small" style="color:#8a5a00">Stata as written: ' + esc(STATA_NOTES[d.code]) + '</div>' : '') + '</div>';
+    }).join('');
+}
+
+// ---------- run view ----------
+function renderRun() {
+  var R = S.run, ex = R.roster.some(function (r) { return r.age !== '' && r.age !== null; });
+  var tabs = [['roster', '① Household & roster'], ['answers', '② Values to enter'], ['expected', '③ Expected & criteria'], ['verify', '④ Verify scores']];
+  $('#main').innerHTML = '<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>' + esc(R.id || 'New test run') + '</h2><div class="muted">' + esc(R.fam ? 'Family ID ' + R.fam : 'Pick the household in the SWDI App, then record its Family ID and roster.') + '</div></div>' +
+    '<div class="row"><span class="pill">' + esc(R.mode) + ' mode</span><select id="rStatus" class="btn sm">' + STATUSES.map(function (s) { return '<option' + (s === R.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select>' +
+    '<button class="btn pri sm" id="saveRun">Save run</button>' + (R.id ? '<button class="btn sm danger" id="delRun">Delete</button>' : '') + '</div></div>' +
+    '<div class="tabs">' + tabs.map(function (t) { return '<button class="tab' + (S.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '"' + (!ex && t[0] !== 'roster' ? ' disabled style="opacity:.4"' : '') + '>' + t[1] + '</button>'; }).join('') + '</div><div id="tabBody"></div>';
+  $('#rStatus').onchange = function () { R.status = this.value; S.dirty = true; };
+  $('#saveRun').onclick = saveRun;
+  if ($('#delRun')) $('#delRun').onclick = function () { $('#delRun').outerHTML = '<span class="small">Delete ' + esc(R.id) + '? <button class="btn sm danger" id="delYes">Yes, delete</button></span>'; $('#delYes').onclick = function () { call('deleteRun', [R.id, tester()], function () { toast('Run deleted'); S.run = null; S.view = 'overview'; route(); }); }; };
+  ({ roster: tabRoster, answers: tabAnswers, expected: tabExpected, verify: tabVerify })[S.tab]();
+}
+
+function tabRoster() {
+  var R = S.run;
+  var opt = function (list, v) { return Object.keys(LISTS[list]).map(function (k) { return '<option value="' + k + '"' + (String(v) === k ? ' selected' : '') + '>' + esc(LISTS[list][k]) + '</option>'; }).join(''); };
+  $('#tabBody').innerHTML = '<div class="card"><div class="row">' +
+    '<label class="field">Family ID (HHID) from the SWDI App<input id="rFam" value="' + esc(R.fam) + '" placeholder="e.g. 166724036-1188-00010"></label>' +
+    '<label class="field">Interview date<input id="rDate" type="date" value="' + esc(R.date) + '"></label>' +
+    '<label class="field">Food threshold (monthly per capita, ₱)<input id="rFood" type="number" step="0.01" value="' + esc(R.food) + '" style="min-width:120px"></label>' +
+    '<label class="field">Poverty threshold (monthly per capita, ₱)<input id="rPov" type="number" step="0.01" value="' + esc(R.pov) + '" style="min-width:120px"></label>' +
+    '<div class="field">Mode<div class="seg" id="rMode"><button data-m="Guided" class="' + (R.mode === 'Guided' ? 'on' : '') + '">Guided</button><button data-m="Record" class="' + (R.mode === 'Record' ? 'on' : '') + '">Record</button></div></div></div>' +
+    '<p class="small muted" style="margin:10px 0 0">Use the SWDI IS food and poverty thresholds for this household\'s province (urban/rural) and income reference period. ' + (R.mode === 'Guided' ? '<b>Guided:</b> after the roster, the web app proposes the values to enter for each member and the household, aimed at scenarios not yet covered by any run (ages decide which scenarios fit).' :
+      '<b>Record:</b> enter whatever you put in the SWDI App. The engine grades it and coverage is credited automatically.') + '</p></div>' +
+    '<div class="card"><h3>Household roster — exactly as listed in the SWDI App</h3><p class="small muted">Age as computed by the app. Age drives every coverage filter (0-5, 0-17, 0-18, 3-18, 5-9, 10-64, 15+).</p>' +
+    '<table class="roster"><tr><th>#</th><th style="width:30%">Name</th><th style="width:80px">Age</th><th>Sex</th><th>Relationship</th><th>Status</th><th></th></tr>' + R.roster.map(function (m, i) {
+      return '<tr data-i="' + i + '"><td>' + m.no + '</td><td><input data-k="name" value="' + esc(m.name) + '"></td><td><input data-k="age" type="number" min="0" max="120" value="' + esc(m.age) + '"></td>' +
+        '<td><select data-k="sex">' + opt('sex', m.sex) + '</select></td><td><select data-k="reln">' + opt('reln', m.reln) + '</select></td><td><select data-k="status">' + opt('memberstatus', m.status) + '</select></td>' +
+        '<td><button class="btn sm" data-del="' + i + '">✕</button></td></tr>';
+    }).join('') + '</table><div class="row" style="margin-top:8px"><button class="btn sm" id="addM">+ Add member</button><span class="small muted" id="ageSummary"></span></div></div>' +
+    '<div class="sticky"><button class="btn pri" id="goPlan">' + (R.mode === 'Guided' ? (R.planned ? 'Re-plan values →' : 'Plan values to enter →') : 'Continue to values →') + '</button>' +
+    (R.mode === 'Record' ? '<button class="btn" id="prefill">Prefill with typical values</button>' : '') + '<span class="small muted" id="planMsg"></span></div>';
+  var upd = function () { var a = R.roster.map(function (m) { return m.age; }).filter(function (x) { return x !== ''; }); $('#ageSummary').textContent = a.length ? 'Ages: ' + a.join(', ') : ''; };
+  upd();
+  $('#rFam').oninput = function () { R.fam = this.value.trim(); S.dirty = true; };
+  $('#rDate').oninput = function () { R.date = this.value; };
+  $('#rFood').oninput = function () { R.food = this.value === '' ? '' : Number(this.value); S.dirty = true; };
+  $('#rPov').oninput = function () { R.pov = this.value === '' ? '' : Number(this.value); S.dirty = true; };
+  $$('#rMode button').forEach(function (b) { b.onclick = function () { R.mode = b.dataset.m; S.dirty = true; renderRun(); }; });
+  $('#tabBody').addEventListener('input', function (e) {
+    var tr = e.target.closest('tr[data-i]'); if (!tr || !e.target.dataset.k) return;
+    var m = R.roster[Number(tr.dataset.i)], k = e.target.dataset.k; m[k] = k === 'name' ? e.target.value : (e.target.value === '' ? '' : Number(e.target.value)); S.dirty = true; upd();
+  });
+  $('#tabBody').addEventListener('click', function (e) {
+    if (e.target.dataset.del) { R.roster.splice(Number(e.target.dataset.del), 1); renumber(); renderRun(); }
+  });
+  $('#addM').onclick = function () { R.roster.push({ no: R.roster.length + 1, name: '', age: '', sex: 1, reln: 3, status: 1 }); renderRun(); };
+  if ($('#prefill')) $('#prefill').onclick = function () { prefillDefaults(); toast('Typical values filled — change them to what you enter'); S.tab = 'answers'; renderRun(); };
+  $('#goPlan').onclick = function () {
+    var bad = R.roster.filter(function (m) { return m.age === '' || m.name === ''; });
+    if (bad.length) { $('#planMsg').textContent = 'Enter the name and age of every member first.'; return; }
+    if (R.mode === 'Guided') { planRun(); } else if (!Object.keys(R.values.hh).length) prefillBlank();
+    S.tab = 'answers'; renderRun();
+  };
+}
+function renumber() { S.run.roster.forEach(function (m, i) { m.no = i + 1; }); }
+function uncovered() {
+  var cov = coverage(), cur = S.run.id;
+  return SC.filter(function (s) { var c = cov[s.id]; return !c || (Object.keys(c.runs).length === 1 && c.runs[cur]); }).map(function (s) { return s.id; });
+}
+function planRun() {
+  var R = S.run, ros = R.roster.map(function (m) { return { no: m.no, name: m.name, age: Number(m.age), status: Number(m.status) || 1 }; });
+  var p = SWDIPlanner.plan(ros, uncovered(), th());
+  R.values = { hh: p.household.hh, m: {} }; R.suggested = { hh: JSON.parse(JSON.stringify(p.household.hh)), m: {} }; R.targets = {};
+  p.household.members.forEach(function (m) { var o = Object.assign({}, m); ['no', 'name', 'age', 'status'].forEach(function (k) { delete o[k]; }); R.values.m[m.no] = o; R.suggested.m[m.no] = JSON.parse(JSON.stringify(o)); });
+  p.targets.forEach(function (t) { t.patches.forEach(function (kp) { Object.keys(kp[1]).forEach(function (v) { var key = (kp[0] === 'hh' ? 0 : kp[0]) + '|' + v; R.targets[key] = (R.targets[key] || []).concat(t.scenarios); }); }); });
+  R.planned = true; R.planSummary = p.targets.reduce(function (n, t) { return n + t.scenarios.length; }, 0); S.dirty = true;
+  toast('Planned: ' + R.planSummary + ' new scenario hits for this household');
+}
+function prefillDefaults() {
+  var R = S.run; R.values = { hh: SWDIPlanner.hhDefaults(), m: {} };
+  R.roster.forEach(function (m) { R.values.m[m.no] = SWDIPlanner.memberDefaults({ age: Number(m.age) }); });
+}
+function prefillBlank() { var R = S.run; R.values = { hh: {}, m: {} }; R.roster.forEach(function (m) { R.values.m[m.no] = {}; }); }
+
+// ---------- answers ----------
+function visible(f, rec, age) {
+  if (f.v === 'status') return false;
+  if (f.s === 'm' && f.age && !S.showAll && (age < f.age[0] || age > f.age[1])) return false;
+  if (!f.when || S.showAll) return true;
+  var w = f.when, n = function (k) { return num(rec[k]); };
+  if (w === 'improved_far') return [11, 12, 13, 14, 21, 31, 41, 51, 61, 71].indexOf(n('water')) >= 0;
+  if (w === 'has_toilet') return true;
+  if (w === 'educind_yes') return n('educind') === 1;
+  if (w === 'educind_no') return n('educind') === 2 || (age >= 19 && n('educind') !== 1);
+  if (w === 'workind_no') return n('workind') === 2;
+  if (w === 'working') return n('workind') === 1 || n('jobind') === 1;
+  if (w === 'not_working') return n('workind') === 2 && n('jobind') !== 1;
+  if (w === 'avail_no') return n('avail_med') === 2;
+  if (/^skill\d$/.test(w)) return (n('skills_n') || 0) >= Number(w.slice(5));
+  if (w === 'gvbind') return SWDI.arr(rec.gvbind).length > 0;
+  return n(w) === 1;
+}
+function ctrl(f, val, key) {
+  var id = 'f_' + key.replace(/[^\w]/g, '_');
+  if (f.t === 'sel' || f.t === 'yn') {
+    var L = f.t === 'yn' ? LISTS.yn : LISTS[f.list] || {};
+    return '<select data-key="' + key + '" id="' + id + '"><option value=""></option>' + Object.keys(L).map(function (k) { return '<option value="' + k + '"' + (String(val) === k ? ' selected' : '') + '>' + (f.t === 'yn' ? '' : k + ' – ') + esc(L[k]) + '</option>'; }).join('') + '</select>';
+  }
+  if (f.t === 'num') return '<input type="number" data-key="' + key + '" value="' + esc(val === null || val === undefined ? '' : val) + '">';
+  if (f.t === 'chk') return '<label class="small"><input type="checkbox" data-key="' + key + '"' + (num(val) === 1 ? ' checked' : '') + '> Yes / ticked</label>';
+  if (f.t === 'multi') {
+    var sel = SWDI.arr(val), L2 = LISTS[f.list] || {};
+    return '<div class="opts">' + Object.keys(L2).map(function (k) { return '<label><input type="checkbox" data-key="' + key + '" data-opt="' + k + '"' + (sel.indexOf(Number(k)) >= 0 ? ' checked' : '') + '> ' + k + ' ' + esc(L2[k]) + '</label>'; }).join('') +
+      (f.list === 'disastkit' ? '<button class="btn sm" data-all="' + key + '">tick all</button>' : '') + '</div>';
+  }
+  return '';
+}
+function fieldHTML(f, rec, sug, scope, no, age) {
+  if (!visible(f, rec, age)) return '';
+  var key = (scope === 'hh' ? 0 : no) + '|' + f.v, val = rec[f.v], s = sug ? sug[f.v] : undefined;
+  var hasS = S.run.mode === 'Guided' && s !== undefined && s !== '', changed = hasS && String(s) !== String(val === undefined ? '' : val);
+  var tg = S.run.targets[key];
+  return '<div class="f' + (changed ? ' chg' : tg ? ' sug' : '') + '"><div class="q">' + esc(f.q) + ' <span class="v">' + f.v + '</span></div>' + ctrl(f, val, key) +
+    (tg ? '<div class="tg">targets: ' + tg.filter(function (x, i, a) { return a.indexOf(x) === i && !/^Z\.|\.f\./.test(x); }).slice(0, 4).map(function (x) { var d = SC.filter(function (s) { return s.id === x; })[0]; return '<span class="tchip" title="' + esc(x) + '">' + esc(d ? d.desc : x) + '</span>'; }).join('') + '</div>' : '') +
+    (changed ? '<div class="chgnote">changed from suggested: ' + esc(displayVal(f, s)) + '</div>' : '') + '</div>';
+}
+function displayVal(f, v) {
+  if (v === '' || v === undefined || v === null) return '(blank)';
+  if (f.t === 'yn') return v == 1 ? 'Yes' : v == 2 ? 'No' : v;
+  if (f.t === 'chk') return v == 1 ? 'ticked' : 'not ticked';
+  if (f.t === 'sel') return v + ' ' + listLabel(f.list, v);
+  return String(v);
+}
+function sectionsHTML(scope, rec, sug, no, age) {
+  var groups = [], cur = null;
+  FIELDS.filter(function (f) { return f.s === scope; }).forEach(function (f) { if (!cur || cur.sec !== f.sec) { cur = { sec: f.sec, fs: [] }; groups.push(cur); } cur.fs.push(f); });
+  return groups.map(function (g) {
+    var inner = g.fs.map(function (f) { return fieldHTML(f, rec, sug, scope, no, age); }).join('');
+    if (!inner) return '';
+    return '<details class="sec" open><summary>' + esc(g.sec) + '</summary><div class="fgrid">' + inner + '</div></details>';
+  }).join('');
+}
+function tabAnswers() {
+  var R = S.run;
+  var exp = expectedFor(R), hits = exp.target.branches.length;
+  var html = '<div class="banner info">' + (R.mode === 'Guided' ? 'Enter these values in the SWDI App. <b>Blue</b> fields were chosen to hit uncovered scenarios (shown as chips). If the app forces something else, change the field to what you actually entered — it turns <b>amber</b> and the expected scores follow.' :
+    'Record what you entered in the SWDI App. Only questions that apply to each member\'s age are shown (toggle below to show all).') + '</div>' +
+    '<div class="row" style="margin-bottom:10px"><label class="small"><input type="checkbox" id="showAll"' + (S.showAll ? ' checked' : '') + '> Show questions outside the member\'s age filter</label>' +
+    (R.mode === 'Guided' ? '<span class="small muted">Plan targets ' + (R.planSummary || 0) + ' scenario hits.</span>' : '') + '</div>' +
+    '<h3>Household</h3>' + sectionsHTML('hh', R.values.hh, R.suggested.hh, 0, 0) + '<h3 style="margin-top:18px">Members</h3>';
+  R.roster.forEach(function (m) {
+    var rec = R.values.m[m.no] = R.values.m[m.no] || {}, sug = R.suggested.m[m.no] || {}, act = Number(m.status) === 1;
+    html += '<div class="mcard"><div class="mhead"><span class="nm">M' + m.no + ' · ' + esc(m.name) + '</span><span>age <b>' + esc(m.age) + '</b></span><span class="muted">' + esc(listLabel('reln', m.reln)) + ', ' + esc(listLabel('sex', m.sex)) + '</span>' +
+      (act ? '' : '<span class="pill v-STATA">' + esc(listLabel('memberstatus', m.status)) + ' — excluded from scoring and family size</span>') + '</div><div style="padding:8px">' +
+      (act ? sectionsHTML('m', rec, sug, m.no, Number(m.age)) : '<p class="small muted">No answers needed.</p>') + '</div></div>';
+  });
+  html += '<div class="sticky"><button class="btn pri" id="saveAns">Save run</button><button class="btn" id="goExp">Next: expected & criteria →</button><span class="small muted">Expected total now: <b>' + fmt(exp.target.total, 4) + '</b> (LOWB ' + exp.target.lowb + ')</span></div>';
+  $('#tabBody').innerHTML = html;
+  $('#showAll').onchange = function () { S.showAll = this.checked; var y = window.scrollY; renderRun(); window.scrollTo(0, y); };
+  $('#saveAns').onclick = saveRun;
+  $('#goExp').onclick = function () { S.tab = 'expected'; renderRun(); };
+  var body = $('#tabBody');
+  body.addEventListener('change', function (e) {
+    var key = e.target.dataset.key; if (!key) return;
+    var parts = key.split('|'), no = Number(parts[0]), v = parts[1], rec = no === 0 ? R.values.hh : R.values.m[no];
+    if (e.target.dataset.opt) {
+      var sel = SWDI.arr(rec[v]), o = Number(e.target.dataset.opt);
+      if (e.target.checked && sel.indexOf(o) < 0) sel.push(o); if (!e.target.checked) sel = sel.filter(function (x) { return x !== o; });
+      rec[v] = sel.sort(function (a, b) { return a - b; }).join(';');
+    } else if (e.target.type === 'checkbox') rec[v] = e.target.checked ? 1 : 2;
+    else rec[v] = e.target.value === '' ? '' : Number(e.target.value);
+    S.dirty = true;
+    var y = window.scrollY; renderRun(); window.scrollTo(0, y);
+  });
+  body.addEventListener('click', function (e) {
+    var k = e.target.dataset.all; if (!k) return;
+    var p = k.split('|'), rec = Number(p[0]) === 0 ? R.values.hh : R.values.m[Number(p[0])]; rec[p[1]] = Object.keys(LISTS.disastkit).join(';'); S.dirty = true;
+    var y = window.scrollY; renderRun(); window.scrollTo(0, y);
+  });
+}
+
+// ---------- expected ----------
+function tabExpected() {
+  var R = S.run, both = expectedFor(R), t = both.target, s = both.stata;
+  var thw = th();
+  var html = (thw.food === null || thw.poverty === null ? '<div class="banner warn">Set the food and poverty thresholds in the Config tab of the sheet to grade income.</div>' : '') +
+    '<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">Expected result (target rule)</h3><div class="small muted">Every level below shows the criterion applied. Members outside an indicator\'s age coverage are listed as excluded.</div></div>' +
+    '<div class="row"><span class="pill">Raw ES ' + fmt(t.es_raw, 5) + ' (re-scaled ' + fmt(t.es_rescaled, 4) + ')</span><span class="pill">Raw SA ' + fmt(t.sa_raw, 5) + ' (re-scaled ' + fmt(t.sa_rescaled, 4) + ')</span>' +
+    '<span class="pill v-CHECK" style="font-size:13px">TOTAL ' + fmt(t.total, 5) + ' → LOWB ' + t.lowb + '</span>' + (Math.abs(t.total - s.total) > 1e-6 ? '<span class="pill v-STATA">Stata as written: ' + fmt(s.total, 5) + ' → LOWB ' + s.lowb + '</span>' : '') + '</div></div></div>';
+  IND.forEach(function (d) {
+    var a = t.indicators[d.code], b = s.indicators[d.code], conf = both.divergent.indexOf(d.code) >= 0;
+    html += '<div class="ind"><div class="h"><b>' + d.code + '</b><span>' + esc(d.name) + '</span><span class="pill">' + esc(d.cov) + ' · ' + esc(d.agg) + ' · w ' + d.w.toFixed(4) + '</span>' +
+      '<div class="lv">' + (conf ? '<span class="pill v-STATA" title="' + esc(b.why) + '">Stata: ' + lvlTxt(b.level) + '</span>' : '') + '<span class="small muted">weighted ' + fmt(a.weighted, 5) + '</span><span class="big">' + lvlTxt(a.level) + '</span></div></div>' +
+      '<div class="why"><div class="fam">' + esc(a.why) + '</div>' + (a.members ? '<table class="mtab">' + a.members.map(function (m) {
+        return '<tr' + (m.level === null ? ' class="ex"' : '') + '><td style="width:200px">M' + m.no + ' ' + esc(m.name) + ' (' + m.age + ')</td><td style="width:70px"><b>' + (m.level === null ? 'excluded' : 'L' + m.level) + '</b></td><td>' + esc(m.why) + '</td></tr>';
+      }).join('') + '</table>' : '') + (conf ? '<div class="small" style="color:#8a5a00;margin-top:4px">Stata as written → ' + lvlTxt(b.level) + ': ' + esc(b.why) + (STATA_NOTES[d.code] ? ' — ' + esc(STATA_NOTES[d.code]) : '') + '</div>' : '') + '</div>' +
+      '<details class="crit"><summary class="small muted" style="cursor:pointer">Criteria</summary><ul>' + [1, 2, 3].map(function (l) { return '<li' + (Math.round(a.level) === l ? ' style="font-weight:600"' : '') + '>Level ' + l + ': ' + esc(d.criteria[l]) + '</li>'; }).join('') + '</ul></details></div>';
+  });
+  html += '<div class="sticky"><button class="btn pri" id="saveExp">Save run</button><button class="btn" id="goVer">Next: verify scores →</button></div>';
+  $('#tabBody').innerHTML = html;
+  $('#saveExp').onclick = saveRun;
+  $('#goVer').onclick = function () { S.tab = 'verify'; renderRun(); };
+}
+
+// ---------- verify ----------
+function verdict(code, obs, exp, stata) {
+  if (obs === null) return '';
+  var c = S.data.config, ltol = num(c.level_tolerance) || 0.01, wtol = num(c.weighted_tolerance) || 0.0006;
+  var d = IND.filter(function (x) { return x.code === code; })[0];
+  var tol = d ? Math.max(ltol, wtol / d.w) : (code === 'LOWB' ? 0.01 : 0.0015);
+  if (exp === null || exp === undefined) return 'N/A CHECK';
+  if (Math.abs(obs - exp) <= tol) return 'PASS';
+  if (stata !== null && stata !== undefined && Math.abs(stata - exp) > 1e-9 && Math.abs(obs - stata) <= tol) return 'STATA RULE';
+  if (d && Math.abs(exp - Math.round(exp)) > 1e-9 && [Math.round(exp), Math.floor(exp), Math.ceil(exp)].some(function (x) { return Math.abs(obs - x) <= tol; })) return 'ROUNDING';
+  return 'FAIL';
+}
+function totalsOf(r) { return { ES: r.es_raw, SA: r.sa_raw, TOTAL: r.total, LOWB: r.lowb, ES_R: r.es_rescaled, SA_R: r.sa_rescaled }; }
+function judgeOne(p, code, both) {
+  var R = S.run, O = R.obs, t = both.target, s = both.stata, tt = totalsOf(t), st = totalsOf(s), raw = num(O[p][code]);
+  if (raw === null) return '';
+  if (code === 'ES' || code === 'SA') { var useR = Math.abs(raw - tt[code + '_R']) < Math.abs(raw - tt[code]); return verdict(code, raw, useR ? tt[code + '_R'] : tt[code], useR ? st[code + '_R'] : st[code]); }
+  if (code === 'TOTAL' || code === 'LOWB') return verdict(code, raw, tt[code], st[code]);
+  var obs = O.mode[p] === 'weighted' ? SWDI.interpretObserved(code, raw, 'weighted') : raw;
+  return verdict(code, obs, t.indicators[code].level, s.indicators[code].level);
+}
+function tabVerify() {
+  var R = S.run, both = expectedFor(R), t = both.target, tt = totalsOf(t), O = R.obs;
+  function col(p, title) {
+    return '<div class="card"><div class="row" style="justify-content:space-between"><h3>' + title + '</h3><div class="row small">Screen shows: <label><input type="radio" name="m' + p + '" value="level"' + (O.mode[p] === 'level' ? ' checked' : '') + '> level</label>' +
+      '<label><input type="radio" name="m' + p + '" value="weighted"' + (O.mode[p] === 'weighted' ? ' checked' : '') + '> weighted score</label></div></div>' +
+      '<details style="margin:6px 0 10px"><summary class="small" style="cursor:pointer">Paste the screen text to fill automatically</summary><textarea id="paste' + p + '" placeholder="Select all on the ' + title + ' score screen, copy, paste here…"></textarea><button class="btn sm" data-parse="' + p + '">Parse</button> <span class="small muted" id="pmsg' + p + '"></span></details>' +
+      '<table><tr><th>Indicator</th><th class="num">Expected</th><th class="num">Observed</th><th>Verdict</th></tr>' +
+      IND.map(function (d) {
+        var a = t.indicators[d.code];
+        return '<tr><td title="' + esc(d.name) + '"><b>' + d.code + '</b> <span class="small muted">' + esc(d.name.slice(0, 32)) + '</span></td><td class="num">' + (O.mode[p] === 'weighted' ? fmt(a.weighted, 5) : lvlTxt(a.level)) + '</td>' +
+          '<td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
+      }).join('') + TOTALS.map(function (d) {
+        return '<tr style="background:#f7f9fc"><td><b>' + d.name + '</b></td><td class="num">' + fmt(tt[d.code], 5) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
+      }).join('') + '</table></div>';
+  }
+  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled. <b>STATA RULE</b> = the platform follows the BRVD Stata command as written; <b>ROUNDING</b> = it rounded a family average.</div>' +
+    '<div class="grid2">' + col('swdi', 'SWDI App') + col('fpf', '4Ps Forward') + '</div>' +
+    '<div class="card"><label class="field">Notes<textarea id="vNotes">' + esc(R.notes) + '</textarea></label></div>' +
+    '<div class="sticky"><button class="btn pri" id="saveVer">Save results</button><span class="small muted">Saving sets the status from what you filled in.</span></div>';
+  function judgeAll() { ['swdi', 'fpf'].forEach(function (p) { IND.concat(TOTALS).forEach(function (d) { var c = $('#v' + p + d.code); if (c) c.innerHTML = pill(judgeOne(p, d.code, both)); }); }); }
+  judgeAll();
+  var body = $('#tabBody');
+  body.addEventListener('input', function (e) {
+    if (e.target.classList.contains('vin')) { O[e.target.dataset.p][e.target.dataset.c] = e.target.value; S.dirty = true; var c = $('#v' + e.target.dataset.p + e.target.dataset.c); c.innerHTML = pill(judgeOne(e.target.dataset.p, e.target.dataset.c, both)); }
+    if (e.target.id === 'vNotes') { R.notes = e.target.value; S.dirty = true; }
+  });
+  body.addEventListener('change', function (e) { if (e.target.type === 'radio') { O.mode[e.target.name.slice(1)] = e.target.value; renderRun(); } });
+  body.addEventListener('click', function (e) {
+    var pp = e.target.dataset.parse;
+    if (pp) {
+      var got = parseScreen($('#paste' + pp).value), n = Object.keys(got.values).length;
+      Object.keys(got.values).forEach(function (c) { O[pp][c] = got.values[c]; });
+      if (n) O.mode[pp] = got.mode; renderRun(); var m = $('#pmsg' + pp); if (m) { m.textContent = n + ' values read (' + got.mode + '). Check them before saving.'; m.closest('details').open = true; }
+    }
+  });
+  $('#saveVer').onclick = function () {
+    var hasF = Object.keys(O.fpf).some(function (k) { return O.fpf[k] !== ''; }), hasS = Object.keys(O.swdi).some(function (k) { return O.swdi[k] !== ''; });
+    if (hasF) R.status = 'Verified in 4Ps Forward'; else if (hasS && STATUSES.indexOf(R.status) < 3) R.status = 'Verified in SWDI App';
+    saveRun();
+  };
+}
+function parseScreen(txt) {
+  var low = ' ' + txt.toLowerCase().replace(/\s+/g, ' ') + ' ', vals = {}, used = [];
+  IND.forEach(function (d) {
+    var best = null;
+    ALIASES[d.code].some(function (al) {
+      var i = -1;
+      while ((i = low.indexOf(al, i + 1)) >= 0) {
+        if (used.some(function (u) { return i >= u[0] && i < u[1]; })) continue;
+        var m = low.slice(i + al.length, i + al.length + 140).match(/(-?\d+(?:\.\d+)?)/);
+        if (m) { best = { v: Number(m[1]), at: i, end: i + al.length }; return true; }
+      }
+      return false;
+    });
+    if (best) { vals[d.code] = best.v; used.push([best.at, best.end]); }
+  });
+  var xs = Object.keys(vals).map(function (k) { return vals[k]; });
+  return { values: vals, mode: xs.length && xs.every(function (x) { return x <= 0.8; }) ? 'weighted' : 'level' };
+}
+
+// ---------- save / load ----------
+function buildPayload() {
+  var R = S.run, both = expectedFor(R), t = both.target, s = both.stata, tt = totalsOf(t), st = totalsOf(s);
+  var roster = R.roster.map(function (m) { return { Key: 'x|' + m.no, 'Member #': m.no, Name: m.name, Age: m.age, Sex: listLabel('sex', m.sex), Relationship: listLabel('reln', m.reln), 'Member status': listLabel('memberstatus', m.status) }; });
+  var entries = [];
+  function addEntries(scope, no, rec, sug, mname) {
+    FIELDS.filter(function (f) { return f.s === scope && f.v !== 'status'; }).forEach(function (f) {
+      var v = rec[f.v], sv = sug ? sug[f.v] : undefined, key = no + '|' + f.v;
+      if ((v === undefined || v === '') && (sv === undefined || sv === '')) return;
+      entries.push({ Key: 'x|' + no + '|' + f.v, 'Member #': no, Member: mname, Section: f.sec, Variable: f.v, Question: f.q, Value: v === undefined ? '' : v, Meaning: displayVal(f, v),
+        'Suggested value': R.mode === 'Guided' && sv !== undefined ? sv : '', 'Target scenarios': (R.targets[key] || []).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(' '),
+        'Changed from suggestion': R.mode === 'Guided' && sv !== undefined && String(sv) !== String(v === undefined ? '' : v) });
+    });
+  }
+  addEntries('hh', 0, R.values.hh, R.suggested.hh, 'Household');
+  R.roster.forEach(function (m) { if (Number(m.status) === 1) addEntries('m', m.no, R.values.m[m.no] || {}, R.suggested.m[m.no], 'M' + m.no + ' ' + m.name); });
+  var scores = [], passN = 0, badN = 0;
+  function obsLevel(p, d) { var raw = num(R.obs[p][d.code]); if (raw === null) return ''; return d.w && R.obs.mode[p] === 'weighted' ? Math.round(SWDI.interpretObserved(d.code, raw, 'weighted') * 100000) / 100000 : raw; }
+  IND.concat(TOTALS).forEach(function (d) {
+    var isI = !!d.w, a = isI ? t.indicators[d.code] : null, b = isI ? s.indicators[d.code] : null;
+    var row = { Key: 'x|' + d.code, Code: d.code, Indicator: d.name, Weight: d.w || '', 'Expected level (target)': isI ? (a.level === null ? '' : Math.round(a.level * 100000) / 100000) : tt[d.code],
+      'Expected weighted': isI ? (a.weighted === null ? '' : a.weighted) : '', 'Stata level': isI ? (b.level === null ? '' : Math.round(b.level * 100000) / 100000) : (st[d.code] === null ? '' : st[d.code]),
+      'Rule conflict': isI ? both.divergent.indexOf(d.code) >= 0 : tt[d.code] !== st[d.code],
+      'How graded (target)': isI ? a.why : '', 'Member breakdown': isI && a.members ? a.members.map(function (m) { return 'M' + m.no + ' ' + m.name + ' (' + m.age + '): ' + (m.level === null ? 'excluded' : 'L' + m.level) + ' — ' + m.why; }).join('\n') : '',
+      'Stata as written': isI && both.divergent.indexOf(d.code) >= 0 ? b.why : '',
+      'SWDI App observed (level)': obsLevel('swdi', d), 'SWDI App verdict': judgeOne('swdi', d.code, both), '4Ps Forward observed (level)': obsLevel('fpf', d), '4Ps Forward verdict': judgeOne('fpf', d.code, both),
+      'Scenarios exercised': '|' + (isI ? a.branches.concat(b.branches.filter(function (x) { return /\.div\.|stata_missing|precedence_bug/.test(x) && x[0] === d.code; })) : d.code === 'LOWB' ? t.branches.filter(function (x) { return x[0] === 'Z'; }) : []).filter(function (x, i, arr) { return arr.indexOf(x) === i; }).join('|') + '|',
+      Notes: '' };
+    row['Final verdict'] = finalVerdict(row);
+    if (row['Final verdict'] === 'PASS') passN++; else if (row['Final verdict']) badN++;
+    scores.push(row);
+  });
+  var run = { 'Run ID': R.id, 'Family ID (HHID)': R.fam, Mode: R.mode, Tester: tester(), 'Interview date': R.date, 'Food threshold': R.food, 'Poverty threshold': R.pov, Status: R.status, Members: R.roster.length,
+    'Expected total (target)': t.total, 'Expected LOWB': t.lowb, 'Stata total': s.total, 'Stata LOWB': s.lowb, 'Rule conflicts': both.divergent.join(', '), 'N/A indicators': t.na.join(', '),
+    'SWDI App total': R.obs.swdi.TOTAL || '', '4Ps Forward total': R.obs.fpf.TOTAL || '', 'Checks passed': passN, 'Checks not passed': badN, 'Scenarios exercised': t.branches.length, Notes: R.notes };
+  return { run: run, roster: roster, entries: entries, scores: scores };
+}
+function saveRun() {
+  var R = S.run;
+  if (!R.fam) { toast('Enter the Family ID first (tab ①)'); S.tab = 'roster'; renderRun(); return; }
+  if (R.status === 'Draft') R.status = 'Entering in SWDI App';
+  var p = buildPayload();
+  call('saveRun', [JSON.stringify(p), tester()], function (id) {
+    R.id = id; S.dirty = false; toast('Saved ' + id);
+    if (S.live) { google.script.run.withSuccessHandler(function (j) { var d = JSON.parse(j); S.data.runs = d.runs; S.data.scores = d.scores; renderNav(); renderRun(); }).getBootstrap(); }
+    else { renderNav(); renderRun(); }
+  });
+}
+function openRun(id, tab) {
+  var meta = (S.data.runs || []).filter(function (r) { return r['Run ID'] === id; })[0]; if (!meta) return;
+  call('getRun', [id], function (j) {
+    var d = JSON.parse(j), R = newRun();
+    R.id = id; R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
+    var inv = function (list, label) { var L = LISTS[list]; var k = Object.keys(L).filter(function (x) { return L[x] === label; })[0]; return k ? Number(k) : 1; };
+    R.roster = d.roster.sort(function (a, b) { return a['Member #'] - b['Member #']; }).map(function (r) { return { no: Number(r['Member #']), name: r.Name, age: Number(r.Age), sex: inv('sex', r.Sex), reln: inv('reln', r.Relationship), status: inv('memberstatus', r['Member status']) }; });
+    R.values = { hh: {}, m: {} }; R.suggested = { hh: {}, m: {} }; R.targets = {};
+    R.roster.forEach(function (m) { R.values.m[m.no] = {}; R.suggested.m[m.no] = {}; });
+    d.entries.forEach(function (e) {
+      var no = Number(e['Member #']), tgt = no === 0 ? R.values.hh : (R.values.m[no] = R.values.m[no] || {}), sg = no === 0 ? R.suggested.hh : (R.suggested.m[no] = R.suggested.m[no] || {});
+      tgt[e.Variable] = e.Value; if (e['Suggested value'] !== '' && e['Suggested value'] !== undefined) sg[e.Variable] = e['Suggested value'];
+      if (e['Target scenarios']) R.targets[no + '|' + e.Variable] = String(e['Target scenarios']).split(' ');
+    });
+    R.planned = R.mode === 'Guided';
+    d.scores.forEach(function (sc) {
+      if (sc['SWDI App observed (level)'] !== '' && sc['SWDI App observed (level)'] !== undefined) R.obs.swdi[sc.Code] = sc['SWDI App observed (level)'];
+      if (sc['4Ps Forward observed (level)'] !== '' && sc['4Ps Forward observed (level)'] !== undefined) R.obs.fpf[sc.Code] = sc['4Ps Forward observed (level)'];
+    });
+    S.run = R; S.view = 'run'; S.tab = tab || 'expected'; S.dirty = false; route();
+  });
+}
+
+// ---------- boot ----------
+function route() {
+  renderNav();
+  if (S.view === 'overview') renderOverview(); else if (S.view === 'criteria') renderCriteria(); else renderRun();
+  window.scrollTo(0, 0);
+}
+function boot(json) {
+  var d = typeof json === 'string' ? JSON.parse(json) : json;
+  S.data = d; S.live = !!d.live;
+  if (!S.live) { var db = load('db'); if (db) { d.runs = db.runs; d.scores = db.scores; } var cf = load('config'); if (cf) Object.assign(d.config, cf); }
+  $('#modeChip').textContent = S.live ? 'Live · Google Sheet' : 'Preview · data stays in this browser';
+  var names = (d.testers || []).slice(); if (d.user && names.indexOf(d.user) < 0) names.unshift(d.user);
+  $('#testerList').innerHTML = names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
+  $('#tester').value = load('tester') || d.user || '';
+  $('#tester').onchange = function () { store('tester', $('#tester').value); };
+  var c = d.config;
+  function thChip() {
+    if (S.live) { $('#thChip').textContent = 'Food ₱' + c.food_threshold + ' · Poverty ₱' + c.poverty_threshold; return; }
+    $('#thChip').innerHTML = 'Food ₱<input id="thF" type="number" value="' + esc(c.food_threshold) + '" style="width:70px;padding:1px 4px"> Poverty ₱<input id="thP" type="number" value="' + esc(c.poverty_threshold) + '" style="width:70px;padding:1px 4px">';
+    ['thF', 'thP'].forEach(function (id) { $('#' + id).onchange = function () { var f = num($('#thF').value), p = num($('#thP').value); if (f === null || p === null) return; c.food_threshold = f; c.poverty_threshold = p; store('config', { food_threshold: f, poverty_threshold: p }); route(); }; });
+  }
+  thChip();
+  $('#newRun').onclick = function () { S.run = newRun(); S.view = 'run'; S.tab = 'roster'; route(); };
+  document.addEventListener('click', function (e) {
+    var v = e.target.closest('.navbtn[data-view]'); if (v) { S.view = v.dataset.view; route(); return; }
+    var r = e.target.closest('[data-run]'); if (r) { e.preventDefault(); openRun(r.dataset.run, r.dataset.tab); return; }
+    var t = e.target.closest('.tab'); if (t && !t.disabled) { S.tab = t.dataset.tab; renderRun(); }
+  });
+  window.addEventListener('beforeunload', function (e) { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+  route();
+}
+if (typeof google !== 'undefined' && google.script && google.script.run) {
+  google.script.run.withSuccessHandler(boot).withFailureHandler(function (e) { $('#main').innerHTML = '<div class="card">Could not load the sheet: ' + esc(e.message) + '</div>'; }).getBootstrap();
+} else if (DEMO) boot(DEMO);
+else $('#main').innerHTML = '<div class="card">No data source.</div>';
+</script>
+</body>
+</html>
