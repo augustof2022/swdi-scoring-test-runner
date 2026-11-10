@@ -75,6 +75,9 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8
 .toast.on{opacity:1;transform:none}
 .legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;align-items:center}
 .tchip{display:inline-block;font-size:11px;background:#e3eefc;color:#173f73;border-radius:4px;padding:0 5px;margin:1px 3px 1px 0}
+table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
+.finding{border-left:3px solid #e2a400;padding:6px 10px;margin:10px 0;background:#fffdf6}
+@media print{.top,aside,.noprint,.toast{display:none!important}.wrap{display:block}main{padding:0}#report{border:none;padding:0}body{background:#fff}.finding{break-inside:avoid}}
 @media (max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;max-height:none}.grid2{grid-template-columns:1fr}}
 </style>
 </head>
@@ -91,6 +94,7 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8
     <button class="btn pri newbtn" id="newRun">+ New test run</button>
     <button class="navbtn" data-view="overview"><div class="t">Overview &amp; coverage</div><div class="s">Progress, matrix, scenarios</div></button>
     <button class="navbtn" data-view="criteria"><div class="t">Scoring criteria</div><div class="s">Levels, coverage, weights per indicator</div></button>
+    <button class="navbtn" data-view="reports"><div class="t">Reports</div><div class="s">Weekly findings, final report</div></button>
     <div class="lbl">Test runs</div>
     <div id="runList"></div>
   </aside>
@@ -615,10 +619,129 @@ function openRun(id, tab) {
   });
 }
 
+// ---------- reports ----------
+var SEV = { 'FAIL': 1, 'STATA RULE': 2, 'ROUNDING': 3, 'N/A CHECK': 4 };
+function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function weekRange(offset) { var d = new Date(); var day = (d.getDay() + 6) % 7; var mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - day + 7 * offset); var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6); return [ymd(mon), ymd(sun)]; }
+function runDate(r) { return String(r['Interview date'] || r['Updated at'] || r['Created at'] || '').slice(0, 10); }
+function buildReport(from, to, kind) {
+  var runsAll = S.data.runs || [], scoresAll = S.data.scores || [];
+  var inP = function (r) { var d = runDate(r); return (!from || d >= from) && (!to || d <= to); };
+  var runs = runsAll.filter(inP), ids = {}; runs.forEach(function (r) { ids[r['Run ID']] = 1; });
+  var scores = scoresAll.filter(function (s) { return ids[s['Run ID']]; });
+  var exe = scores.filter(function (s) { return finalVerdict(s); });
+  var count = function (rows, v) { return rows.filter(function (s) { return finalVerdict(s) === v; }).length; };
+  // findings grouped by indicator + verdict
+  var groups = {};
+  scores.forEach(function (s) {
+    var verdicts = [['SWDI App', s['SWDI App verdict'], s['SWDI App observed (level)']], ['4Ps Forward', s['4Ps Forward verdict'], s['4Ps Forward observed (level)']]];
+    verdicts.forEach(function (v) {
+      if (!v[1] || v[1] === 'PASS') return;
+      var k = s.Code + '|' + v[1], g = groups[k] = groups[k] || { code: s.Code, name: s.Indicator, verdict: v[1], items: [], platforms: {} };
+      g.platforms[v[0]] = 1;
+      g.items.push({ run: s['Run ID'], platform: v[0], expected: s['Expected level (target)'], stata: s['Stata level'], observed: v[2], why: s['How graded (target)'], stataWhy: s['Stata as written'] });
+    });
+    var a = num(s['SWDI App observed (level)']), b = num(s['4Ps Forward observed (level)']);
+    if (a !== null && b !== null && Math.abs(a - b) > 0.01) {
+      var k2 = s.Code + '|PLATFORMS DIFFER', g2 = groups[k2] = groups[k2] || { code: s.Code, name: s.Indicator, verdict: 'PLATFORMS DIFFER', items: [], platforms: { 'SWDI App': 1, '4Ps Forward': 1 } };
+      g2.items.push({ run: s['Run ID'], platform: 'both', expected: s['Expected level (target)'], observed: 'App ' + a + ' / 4Ps Forward ' + b, why: s['How graded (target)'] });
+    }
+  });
+  var findings = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (x, y) { return (SEV[x.verdict] || 5) - (SEV[y.verdict] || 5) || x.code.localeCompare(y.code); });
+  // per indicator
+  var perInd = IND.concat([TOTALS[2], TOTALS[3]]).map(function (d) {
+    var rs = exe.filter(function (s) { return s.Code === d.code; });
+    return { code: d.code, name: d.name, n: rs.length, pass: count(rs, 'PASS'), fail: count(rs, 'FAIL'), stata: count(rs, 'STATA RULE'), round: count(rs, 'ROUNDING'), na: count(rs, 'N/A CHECK') };
+  });
+  // coverage: cumulative to end of period, and newly exercised within the period
+  var before = {}, upto = {};
+  scoresAll.forEach(function (s) {
+    var r = runsAll.filter(function (x) { return x['Run ID'] === s['Run ID']; })[0]; if (!r) return;
+    var d = runDate(r), list = String(s['Scenarios exercised'] || '').split('|').filter(Boolean);
+    list.forEach(function (id) { if (!to || d <= to) upto[id] = 1; if (from && d < from) before[id] = 1; });
+  });
+  var newly = Object.keys(upto).filter(function (id) { return !before[id]; });
+  var catIds = {}; SC.forEach(function (s) { catIds[s.id] = 1; });
+  var covered = Object.keys(upto).filter(function (id) { return catIds[id]; }).length;
+  var missing = SC.filter(function (s) { return !upto[s.id]; });
+  var openRules = SC.filter(function (s) { return s.kind === 'Needs DSWD confirmation'; }).map(function (s) {
+    var c = 0; scoresAll.forEach(function (x) { if (String(x['Scenarios exercised'] || '').indexOf('|' + s.id + '|') >= 0) c++; }); return { s: s, runs: c };
+  });
+  var naChecks = exe.filter(function (s) { return finalVerdict(s) === 'N/A CHECK'; }).length;
+  return { kind: kind, from: from, to: to, runs: runs, runsAll: runsAll, exe: exe, count: count, findings: findings, perInd: perInd, newly: newly.filter(function (id) { return catIds[id]; }).length,
+    covered: covered, total: SC.length, missing: missing, openRules: openRules, naChecks: naChecks, verified4pf: runs.filter(function (r) { return r.Status === 'Verified in 4Ps Forward'; }).length };
+}
+function renderReports() {
+  var st = S.rep = S.rep || { preset: 'this', from: weekRange(0)[0], to: weekRange(0)[1] };
+  $('#main').innerHTML = '<div class="row noprint" style="justify-content:space-between;align-items:flex-end"><div><h2>Reports</h2><div class="muted small">Weekly progress and findings, or the final report over all runs. Print to PDF or copy into Google Docs/Word.</div></div>' +
+    '<div class="row"><div class="seg" id="repPreset">' + [['this', 'This week'], ['last', 'Last week'], ['custom', 'Custom'], ['all', 'Final (all runs)']].map(function (p) { return '<button data-p="' + p[0] + '" class="' + (st.preset === p[0] ? 'on' : '') + '">' + p[1] + '</button>'; }).join('') + '</div>' +
+    (st.preset === 'custom' ? '<input type="date" id="repFrom" class="btn sm" value="' + st.from + '"><input type="date" id="repTo" class="btn sm" value="' + st.to + '">' : '') +
+    '<button class="btn" id="repCopy">Copy for Docs</button><button class="btn pri" id="repPrint">Print / Save PDF</button></div></div><div id="report" class="card" style="margin-top:12px"></div>';
+  $$('#repPreset button').forEach(function (b) { b.onclick = function () {
+    st.preset = b.dataset.p;
+    if (st.preset === 'this') { var w = weekRange(0); st.from = w[0]; st.to = w[1]; } else if (st.preset === 'last') { var l = weekRange(-1); st.from = l[0]; st.to = l[1]; } else if (st.preset === 'all') { st.from = ''; st.to = ''; }
+    renderReports(); }; });
+  if ($('#repFrom')) { $('#repFrom').onchange = function () { st.from = this.value; renderReports(); }; $('#repTo').onchange = function () { st.to = this.value; renderReports(); }; }
+  $('#repPrint').onclick = function () { try { window.print(); } catch (e) { toast('Printing is blocked here — use Copy for Docs'); } };
+  $('#repCopy').onclick = function () {
+    var el = $('#report'), html = el.innerHTML;
+    var done = function () { toast('Report copied — paste into Google Docs or Word'); };
+    try {
+      if (navigator.clipboard && window.ClipboardItem) { navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([el.innerText], { type: 'text/plain' }) })]).then(done, fallback); }
+      else fallback();
+    } catch (e) { fallback(); }
+    function fallback() { var r = document.createRange(); r.selectNodeContents(el); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); try { document.execCommand('copy'); done(); } catch (e) { toast('Select the report and copy it manually'); } s.removeAllRanges(); }
+  };
+  $('#report').innerHTML = reportHTML(buildReport(st.from, st.to, st.preset === 'all' ? 'final' : 'weekly'));
+}
+function reportHTML(R) {
+  var c = S.data.config, final = R.kind === 'final';
+  var period = final ? 'All runs to date' : R.from + ' to ' + R.to;
+  var pct = function (a, b) { return b ? Math.round(100 * a / b) + '%' : '—'; };
+  var h = '<h2 style="margin-bottom:2px">' + (final ? 'SWDI Scoring Test — Final report' : 'SWDI Scoring Test — Weekly report') + '</h2>' +
+    '<div class="muted small">Period: <b>' + esc(period) + '</b> · Generated ' + esc(today()) + (tester() ? ' by ' + esc(tester()) : '') + (c.app_version ? ' · SWDI App build ' + esc(c.app_version) : '') + '</div>';
+  h += '<h3 style="margin-top:16px">1. Summary</h3><table class="rep"><tr><td>Test runs (interviews) in period</td><td class="num"><b>' + R.runs.length + '</b></td><td>Cumulative runs</td><td class="num"><b>' + R.runsAll.length + '</b></td></tr>' +
+    '<tr><td>Runs verified in 4Ps Forward</td><td class="num">' + R.verified4pf + '</td><td>Indicator checks executed</td><td class="num">' + R.exe.length + '</td></tr>' +
+    '<tr><td>PASS</td><td class="num">' + R.count(R.exe, 'PASS') + ' (' + pct(R.count(R.exe, 'PASS'), R.exe.length) + ')</td><td>FAIL</td><td class="num">' + R.count(R.exe, 'FAIL') + '</td></tr>' +
+    '<tr><td>STATA RULE (DSWD change not implemented)</td><td class="num">' + R.count(R.exe, 'STATA RULE') + '</td><td>ROUNDING</td><td class="num">' + R.count(R.exe, 'ROUNDING') + '</td></tr>' +
+    '<tr><td>Scenario coverage (cumulative)</td><td class="num">' + R.covered + ' / ' + R.total + ' (' + pct(R.covered, R.total) + ')</td><td>' + (final ? 'Not yet covered' : 'New scenarios this period') + '</td><td class="num">' + (final ? R.missing.length : R.newly) + '</td></tr></table>';
+  var sev = R.findings.filter(function (f) { return f.verdict !== 'N/A CHECK'; });
+  h += '<h3 style="margin-top:16px">2. Findings (' + sev.length + ')</h3>';
+  if (!sev.length) h += '<p class="muted">No mismatches in this period.</p>';
+  sev.forEach(function (f, i) {
+    var runs = f.items.map(function (x) { return x.run; }).filter(function (x, j, a) { return a.indexOf(x) === j; });
+    var meaning = f.verdict === 'FAIL' ? 'Platform score matches neither the DSWD target rule nor the Stata command as written.' : f.verdict === 'STATA RULE' ? 'Platform follows the BRVD Stata command as written; the DSWD-requested change is not implemented.' + (STATA_NOTES[f.code] ? ' ' + STATA_NOTES[f.code] : '') :
+      f.verdict === 'ROUNDING' ? 'Platform rounds the family average to a whole level instead of using the unrounded average.' : 'SWDI App and 4Ps Forward show different values for the same assessment.';
+    h += '<div class="finding"><b>F' + (i + 1) + '. ' + f.code + ' — ' + esc(f.name) + '</b> <span class="pill ' + vcls(f.verdict) + '">' + esc(f.verdict) + '</span> <span class="small muted">' + runs.length + ' run(s) · ' + Object.keys(f.platforms).join(', ') + '</span>' +
+      '<div class="small" style="margin:4px 0">' + esc(meaning) + '</div><table class="rep small"><tr><th>Run</th><th>Platform</th><th class="num">Expected</th><th class="num">Stata</th><th class="num">Observed</th><th>How the expected level was graded</th></tr>' +
+      f.items.slice(0, 8).map(function (x) { return '<tr><td>' + esc(x.run) + '</td><td>' + esc(x.platform) + '</td><td class="num">' + lvlTxt(x.expected) + '</td><td class="num">' + (x.stata === undefined || x.stata === '' ? '—' : lvlTxt(x.stata)) + '</td><td class="num">' + esc(x.observed) + '</td><td>' + esc(String(x.why || '').slice(0, 220)) + '</td></tr>'; }).join('') +
+      (f.items.length > 8 ? '<tr><td colspan="6" class="muted">… ' + (f.items.length - 8) + ' more</td></tr>' : '') + '</table></div>';
+  });
+  h += '<h3 style="margin-top:16px">3. Results by indicator</h3><table class="rep small"><tr><th>Indicator</th><th class="num">Checks</th><th class="num">PASS</th><th class="num">FAIL</th><th class="num">STATA RULE</th><th class="num">ROUNDING</th><th class="num">N/A CHECK</th><th class="num">Pass rate</th></tr>' +
+    R.perInd.map(function (p) { return '<tr><td><b>' + p.code + '</b> ' + esc(p.name) + '</td><td class="num">' + p.n + '</td><td class="num">' + p.pass + '</td><td class="num">' + (p.fail ? '<b style="color:var(--fail)">' + p.fail + '</b>' : 0) + '</td><td class="num">' + (p.stata ? '<b style="color:var(--amber)">' + p.stata + '</b>' : 0) + '</td><td class="num">' + p.round + '</td><td class="num">' + p.na + '</td><td class="num">' + pct(p.pass, p.n) + '</td></tr>'; }).join('') + '</table>';
+  h += '<h3 style="margin-top:16px">4. Test runs' + (final ? '' : ' in this period') + '</h3>' + (R.runs.length ? '<table class="rep small"><tr><th>Run</th><th>Family ID</th><th>Date</th><th>Tester</th><th>Mode</th><th>Status</th><th class="num">Expected total / LOWB</th><th class="num">App total</th><th class="num">4PsF total</th><th class="num">Pass / issues</th></tr>' +
+    R.runs.map(function (r) { return '<tr><td>' + esc(r['Run ID']) + '</td><td>' + esc(r['Family ID (HHID)']) + '</td><td>' + esc(runDate(r)) + '</td><td>' + esc(r.Tester) + '</td><td>' + esc(r.Mode) + '</td><td>' + esc(r.Status) + '</td><td class="num">' + fmt(r['Expected total (target)'], 4) + ' / L' + esc(r['Expected LOWB']) +
+      '</td><td class="num">' + fmt(r['SWDI App total'], 4) + '</td><td class="num">' + fmt(r['4Ps Forward total'], 4) + '</td><td class="num">' + esc(r['Checks passed']) + ' / ' + esc(r['Checks not passed']) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">No runs in this period.</p>');
+  var byNeed = {}; R.missing.forEach(function (s) { (byNeed[s.needs] = byNeed[s.needs] || []).push(s); });
+  h += '<h3 style="margin-top:16px">5. Coverage still needed (' + R.missing.length + ' scenarios)</h3>' + (R.missing.length ? '<p class="small muted">Use this to choose next week\'s households: the "Needs" column says what kind of member the household must have.</p><table class="rep small"><tr><th>Needs</th><th class="num">Scenarios</th><th>Examples</th></tr>' +
+    Object.keys(byNeed).sort(function (a, b) { return byNeed[b].length - byNeed[a].length; }).map(function (k) { return '<tr><td>' + esc(k) + '</td><td class="num">' + byNeed[k].length + '</td><td>' + byNeed[k].slice(0, 3).map(function (s) { return esc(s.desc); }).join('; ') + '</td></tr>'; }).join('') + '</table>' : '<p>All catalogued scenarios have been exercised.</p>');
+  h += '<h3 style="margin-top:16px">6. Rules to confirm with SCMD</h3><table class="rep small"><tr><th>Indicator</th><th>Open question</th><th class="num">Runs that hit it</th></tr>' +
+    R.openRules.map(function (o) { return '<tr><td>' + o.s.ind + '</td><td>' + esc(o.s.desc) + '</td><td class="num">' + o.runs + '</td></tr>'; }).join('') +
+    '<tr><td>—</td><td>Indicators with no eligible member (N/A): how the platform scores them</td><td class="num">' + R.naChecks + ' check(s)</td></tr></table>';
+  if (final) {
+    var openF = R.findings.filter(function (f) { return f.verdict === 'FAIL' || f.verdict === 'STATA RULE' || f.verdict === 'ROUNDING'; }).length;
+    h += '<h3 style="margin-top:16px">7. Completion status</h3><ul class="small"><li>Scenario coverage: <b>' + pct(R.covered, R.total) + '</b> (' + R.covered + ' of ' + R.total + ').</li><li>Open findings: <b>' + openF + '</b> (FAIL, STATA RULE or ROUNDING groups).</li>' +
+      '<li>Runs verified in 4Ps Forward: <b>' + R.verified4pf + '</b> of ' + R.runs.length + '.</li><li>Open rule confirmations: <b>' + R.openRules.length + '</b>.</li></ul>' +
+      '<p class="small muted">Scoring can be signed off when coverage is complete (or the remaining scenarios are explicitly waived), every finding is fixed and re-tested to PASS, and SCMD has confirmed the open rules.</p>' +
+      '<table class="rep small" style="margin-top:12px"><tr><th>Prepared by</th><th>Reviewed by</th><th>Approved by</th></tr><tr><td style="height:48px"></td><td></td><td></td></tr></table>';
+  }
+  return h;
+}
+
 // ---------- boot ----------
 function route() {
   renderNav();
-  if (S.view === 'overview') renderOverview(); else if (S.view === 'criteria') renderCriteria(); else renderRun();
+  if (S.view === 'overview') renderOverview(); else if (S.view === 'criteria') renderCriteria(); else if (S.view === 'reports') renderReports(); else renderRun();
   window.scrollTo(0, 0);
 }
 function boot(json) {
