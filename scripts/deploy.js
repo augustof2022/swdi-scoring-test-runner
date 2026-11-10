@@ -7,7 +7,19 @@ const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..');
 const cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
 const DESC = 'SWDI Test Runner';
-const clasp = (...args) => execFileSync('npx', ['--no-install', 'clasp', ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+function clasp(...args) {
+  try { return execFileSync('npx', ['--no-install', 'clasp', ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); }
+  catch (e) {
+    const msg = String(e.stderr || '') + String(e.stdout || '');
+    process.stderr.write(msg);
+    if (/invalid_grant|invalid_client|unauthorized_client|No credentials|login/i.test(msg)) {
+      console.log('::error title=clasp login is not valid::The token in CLASPRC_JSON was rejected (' + (msg.match(/invalid_grant|invalid_client|unauthorized_client/) || ['no credentials'])[0] +
+        '). Run `npx @google/clasp login` again, then replace the CLASPRC_JSON secret with the new ~/.clasprc.json.');
+    }
+    if (/Apps Script API|has not been used|is disabled/i.test(msg)) console.log('::error title=Apps Script API is off::Turn it on at https://script.google.com/home/usersettings for the account in CLASPRC_JSON.');
+    process.exit(1);
+  }
+}
 const json = s => { const i = Math.min(...['[', '{'].map(c => (s.indexOf(c) < 0 ? Infinity : s.indexOf(c)))); return JSON.parse(s.slice(i)); };
 const build = () => execFileSync('node', ['scripts/build.js'], { cwd: root, stdio: 'inherit' });
 
