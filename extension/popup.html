@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SWDI Test Capture</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header><img src="icon32.png" alt=""><div><b>SWDI Test Capture</b><span>Read-only · never edits or submits</span></div></header>
+<section id="where" class="note"></section>
+<section class="opts">
+  <label><input type="checkbox" id="answers" checked> Include roster and answers <small>(opens each section and member tab to read them, then switches back; ~10–30 s)</small></label>
+</section>
+<button id="go" class="pri">Capture this assessment</button>
+<div id="status" class="small"></div>
+<section id="result" hidden></section>
+<details id="settings">
+  <summary>Settings</summary>
+  <label>Test Runner web app URL<input id="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+  <small>From the deploy summary in GitHub Actions. Saved in this browser only.</small>
+</details>
+<script src="lib/swdi-fpf.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

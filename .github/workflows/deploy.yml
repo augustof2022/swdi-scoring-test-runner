@@ -18,6 +18,14 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Check the extension copy of the 4Ps Forward helpers is current
+        run: git diff --exit-code extension/lib/swdi-fpf.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swdi-test-capture-extension
+          path: |
+            extension/
+            !extension/**/*.md
 
   deploy:
     needs: test

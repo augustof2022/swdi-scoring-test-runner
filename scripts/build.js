@@ -7,7 +7,7 @@ const sheetId = process.env.SHEET_ID || cfg.sheetId;
 const read = p => fs.readFileSync(R(p), 'utf8');
 const tpl = read('src/index.html');
 const inline = t => t.replace('/*ENGINE*/', () => read('engine/swdi-engine.js')).replace('/*PLANNER*/', () => read('engine/swdi-planner.js'))
-  .replace('/*FIELDS*/', () => read('engine/swdi-fields.js')).replace('/*SCENARIOS*/', () => read('engine/swdi-scenarios.js'));
+  .replace('/*FIELDS*/', () => read('engine/swdi-fields.js')).replace('/*SCENARIOS*/', () => read('engine/swdi-scenarios.js')).replace('/*FPF*/', () => read('engine/swdi-fpf.js'));
 fs.mkdirSync(R('dist'), { recursive: true });
 fs.writeFileSync(R('dist/Index.html'), inline(tpl).replace('/*DEMO*/null', 'null'));
 fs.writeFileSync(R('dist/Code.js'), read('src/Code.js').replace('__SHEET_ID__', sheetId));
@@ -16,4 +16,7 @@ const demo = { live: false, user: '', testers: ['Tester 1', 'Tester 2'], runs: [
   config: { food_threshold: 2053, poverty_threshold: 2647, level_tolerance: 0.01, weighted_tolerance: 0.0006 } };
 fs.mkdirSync(R('preview'), { recursive: true });
 fs.writeFileSync(R('preview/index.html'), inline(tpl).replace('/*DEMO*/null', () => JSON.stringify(demo)));
+// The capture extension ships the same 4Ps Forward helpers as the web app (kept in git so the folder loads unpacked).
+fs.mkdirSync(R('extension/lib'), { recursive: true });
+fs.copyFileSync(R('engine/swdi-fpf.js'), R('extension/lib/swdi-fpf.js'));
 console.log('built dist/ (sheet ' + sheetId + ') and preview/index.html');

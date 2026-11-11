@@ -7,7 +7,8 @@ var SHEET_ID = '__SHEET_ID__';   // replaced at build time from config.json
 var SCHEMA = {
   Runs: ['Run ID', 'Family ID (HHID)', 'Mode', 'Tester', 'Interview date', 'Food threshold', 'Poverty threshold', 'Status', 'Members', 'Expected total (target)', 'Expected LOWB',
     'Stata total', 'Stata LOWB', 'Rule conflicts', 'N/A indicators', 'SWDI App total', '4Ps Forward total', 'Checks passed', 'Checks not passed',
-    'Scenarios exercised', 'Notes', 'Created at', 'Updated at'],
+    'Scenarios exercised', 'Notes', 'Created at', 'Updated at',
+    'Household head', 'Created by', 'Last saved by', 'Environment', '4Ps Forward link', 'Progress', 'Revision'],
   Roster: ['Key', 'Run ID', 'Member #', 'Name', 'Age', 'Sex', 'Relationship', 'Member status'],
   Entries: ['Key', 'Run ID', 'Member #', 'Member', 'Section', 'Variable', 'Question', 'Value', 'Meaning', 'Suggested value', 'Target scenarios', 'Changed from suggestion'],
   Scores: ['Key', 'Run ID', 'Code', 'Indicator', 'Weight', 'Expected level (target)', 'Expected weighted', 'Stata level', 'Rule conflict',
@@ -30,10 +31,17 @@ function setupSheet() {
   var ss = ss_();
   Object.keys(SCHEMA).forEach(function (name) {
     var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    var hdr = SCHEMA[name];
     if (sh.getLastRow() === 0) {
-      sh.getRange(1, 1, 1, SCHEMA[name].length).setValues([SCHEMA[name]]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
+      sh.getRange(1, 1, 1, hdr.length).setValues([hdr]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
       sh.setFrozenRows(1);
+      return;
     }
+    // Newer versions only append columns: add any missing headers on the right, keep existing data where it is.
+    var cur = sh.getRange(1, 1, 1, hdr.length).getValues()[0];
+    var prefixOk = cur.every(function (v, i) { return v === '' || v === hdr[i]; });
+    if (prefixOk && cur.some(function (v, i) { return v !== hdr[i]; }))
+      sh.getRange(1, 1, 1, hdr.length).setValues([hdr]).setFontWeight('bold').setBackground('#1f3a5f').setFontColor('#ffffff');
   });
 }
 
@@ -60,10 +68,12 @@ function config_() {
   return { config: cfg, testers: testers };
 }
 
+/** The signed-in Google account, when Google shares it with the script (same Workspace domain); '' otherwise. */
+function user_() { try { return Session.getActiveUser().getEmail() || ''; } catch (e) { return ''; } }
+
 function getBootstrap() {
   setupSheet();
-  var c = config_(), user = '';
-  try { user = Session.getActiveUser().getEmail(); } catch (e) {}
+  var c = config_(), user = user_();
   return JSON.stringify({ live: true, user: user, config: c.config, testers: c.testers, runs: table_('Runs'), scores: table_('Scores') });
 }
 
@@ -105,22 +115,31 @@ function replaceRows_(name, runId, rows) {
 function saveRun(payloadJson, tester) {
   var p = typeof payloadJson === 'string' ? JSON.parse(payloadJson) : payloadJson;
   return withLock_(function () {
-    var run = p.run, isNew = !run['Run ID'];
+    var run = p.run, isNew = !run['Run ID'], who = user_() || String(tester || '').trim() || 'unknown';
     if (isNew) run['Run ID'] = nextRunId_();
     var id = run['Run ID'], now = new Date();
     var stamp = function (rows) { return rows.map(function (r) { r['Run ID'] = id; r.Key = id + '|' + r.Key.split('|').slice(1).join('|'); return r; }); };
     var sh = sheet_('Runs'), hdr = SCHEMA.Runs, last = sh.getLastRow(), rowIdx = -1;
     if (last >= 2) rowIdx = sh.getRange(2, 1, last - 1, 1).getValues().map(function (r) { return r[0]; }).indexOf(id);
-    run['Updated at'] = now; if (rowIdx < 0) run['Created at'] = now;
-    if (rowIdx >= 0) { var old = sh.getRange(rowIdx + 2, 1, 1, hdr.length).getValues()[0]; run['Created at'] = old[hdr.indexOf('Created at')] || now; }
+    run['Updated at'] = now; run['Last saved by'] = who;
+    if (rowIdx < 0) { run['Created at'] = now; run['Created by'] = who; run.Revision = 1; }
+    else {
+      var old = sh.getRange(rowIdx + 2, 1, 1, hdr.length).getValues()[0], oldRev = Number(old[hdr.indexOf('Revision')]) || 0;
+      // Two testers on the same run: refuse to overwrite a newer save the caller has not seen.
+      if (p.baseRevision !== undefined && p.baseRevision !== null && Number(p.baseRevision) !== oldRev)
+        throw new Error('This run was saved by ' + (old[hdr.indexOf('Last saved by')] || 'another tester') + ' after you opened it. Reopen the run to load their changes, then redo yours.');
+      run['Created at'] = old[hdr.indexOf('Created at')] || now;
+      run['Created by'] = old[hdr.indexOf('Created by')] || old[hdr.indexOf('Tester')] || who;
+      run.Revision = oldRev + 1;
+    }
     var vals = [hdr.map(function (k) { var v = run[k]; return v === undefined || v === null ? '' : v; })];
     if (rowIdx >= 0) sh.getRange(rowIdx + 2, 1, 1, hdr.length).setValues(vals);
     else sh.getRange(sh.getLastRow() + 1, 1, 1, hdr.length).setValues(vals);
     replaceRows_('Roster', id, stamp(p.roster || []));
     replaceRows_('Entries', id, stamp(p.entries || []));
     replaceRows_('Scores', id, stamp((p.scores || []).map(function (s) { s['Updated at'] = now; return s; })));
-    log_(tester, id, isNew ? 'Created run' : 'Saved run', (p.entries || []).length + ' entries, ' + (p.scores || []).length + ' score rows');
-    return id;
+    log_(who, id, isNew ? 'Created run' : 'Saved run', (p.entries || []).length + ' entries, ' + (p.scores || []).length + ' score rows');
+    return JSON.stringify({ id: id, revision: run.Revision, createdBy: run['Created by'], savedBy: who });
   });
 }
 
@@ -129,7 +148,7 @@ function deleteRun(runId, tester) {
     ['Roster', 'Entries', 'Scores'].forEach(function (n) { replaceRows_(n, runId, []); });
     var sh = sheet_('Runs'), last = sh.getLastRow();
     if (last >= 2) { var i = sh.getRange(2, 1, last - 1, 1).getValues().map(function (r) { return r[0]; }).indexOf(runId); if (i >= 0) sh.deleteRow(i + 2); }
-    log_(tester, runId, 'Deleted run', '');
+    log_(user_() || tester, runId, 'Deleted run', '');
     return true;
   });
 }

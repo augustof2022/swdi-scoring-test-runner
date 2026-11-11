@@ -7,6 +7,8 @@ Test tool for **Enhanced SWDI scoring** in the **SWDI App** (mobile) and **4Ps F
 * The **scoring engine** grades automatically and shows its reasoning: for every indicator and member it states the criterion applied, who was excluded by age, and how the family level was aggregated. No manual grading.
 * After sync, the tester types or pastes the scores shown by each platform. Every indicator gets a verdict: `PASS`, `STATA RULE`, `ROUNDING`, `FAIL` or `N/A CHECK`.
 * Everything is stored in a Google Sheet (runs, roster, entries, scores, scenario coverage, dashboard).
+* **Several testers** share the sheet. Each run records who created it and who saved it last. The run list shows the Family ID and household head, can be searched, and defaults to **My runs** (switch to **All runs** to see everyone's). Runs can be saved part-way and resumed: opening a run goes to its next unfinished step.
+* The **SWDI Test Capture** browser extension reads the 4Ps Forward Assessment Review (score, indicators, roster, answers) and sends it to the web app, so 4Ps Forward results are not retyped.
 
 | Piece | Where |
 |---|---|
@@ -17,7 +19,27 @@ Test tool for **Enhanced SWDI scoring** in the **SWDI App** (mobile) and **4Ps F
 | Scenario catalog (313 branches, boundaries, option spread, rule conflicts) | `engine/swdi-scenarios.js` (generated from `sheet/scenario_ids.json`) |
 | Apps Script back end | `src/Code.js`, `src/appsscript.json` |
 | Web app UI | `src/index.html` (engine files are inlined at build) |
+| 4Ps Forward helpers (code map D1→D …, score card reader, capture → run) | `engine/swdi-fpf.js` (copied to `extension/lib/` at build) |
+| SWDI Test Capture extension (Chrome / Edge, MV3, read-only) | `extension/` |
 | Deploy | `scripts/deploy.js` (clasp) and `.github/workflows/deploy.yml` |
+
+## Several testers
+
+* **Who is who.** The web app runs as the deploying account. Google tells the script the visitor's email only when the visitor is in the same Google Workspace domain; otherwise the app uses the **Tester** name typed at the top right (remembered per browser). Each tester should type the same name every time.
+* **Runs columns.** `Created by`, `Last saved by`, `Household head`, `Environment`, `4Ps Forward link`, `Progress` (n/4 steps and the next one) and `Revision`. Existing sheets get the new header cells automatically on the next page load.
+* **Two people on one run.** Each save carries the revision the tester opened. If someone else saved in between, the save is refused with their name, so nobody overwrites a colleague's work silently.
+* **Unsaved work** is kept in the browser every few seconds; the Overview offers *Restore* after a closed tab or lost connection.
+
+## SWDI Test Capture extension
+
+A separate, read-only extension (it does not replace the SWDI CMS Assistant reviewer extension). It runs only on `4ps-dp-preprod.dswd.gov.ph` and `4ps-dp-preprod-loadtest.dswd.gov.ph`.
+
+1. Install: `chrome://extensions` (or `edge://extensions`) → **Developer mode** → **Load unpacked** → select this repository's `extension` folder. Each GitHub Actions run also publishes it as the `swdi-test-capture-extension` artifact.
+2. Click the extension icon → **Settings** → paste the web app URL (from the deploy summary).
+3. In 4Ps Forward open the household's **Assessment Review** → **Capture this assessment**. It reads the Current column only: Household ID, period, status, the SWDI Score card (total, level, Partial flag, ES/SA as shown, each indicator), and — when *Include roster and answers* is ticked — every member tab and every answer. To read them it opens sections and member tabs, then switches back. It never edits, approves or returns an assessment.
+4. **Send to Test Runner** opens the web app with the capture in the URL `#hash` (it is not sent to any server). The web app offers to fill the 4Ps Forward scores of an existing run with the same Family ID, or to create a **Record-mode run** from the captured roster and answers. **Copy JSON** + *Import from 4Ps Forward → paste* does the same by hand.
+
+Notes: 4Ps Forward shows **re-scaled** ES/SA (raw ÷ 0.3333 and raw ÷ 0.6669). Indicators missing from a *Partial* score are imported as `N/A`; the verdict is `FAIL` when the expected result has a level for them. 4Ps Forward codes map as A, B, C, D1→D, D2→E, E1→F, E2→G, E3→H, E4→I, E5→J, E6→K, F1→L, F2→M, F3→N, G1→O … G5→S, H1→T, H2→U, H3→V, I1→W, I2→X, I3→Y.
 
 ## Rule sets
 

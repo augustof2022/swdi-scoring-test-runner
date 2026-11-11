@@ -52,8 +52,8 @@ test('saveRun assigns IDs, replaces a run\'s rows on re-save and deleteRun remov
   const { ctx, ss } = load();
   const boot = JSON.parse(ctx.getBootstrap());
   assert.equal(boot.config.food_threshold, 2053); assert.deepEqual(boot.testers, ['Tester 1']);
-  const id1 = ctx.saveRun(JSON.stringify(payload('', 'FAM-1', 3)), 't');
-  const id2 = ctx.saveRun(JSON.stringify(payload('', 'FAM-2', 2)), 't');
+  const id1 = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-1', 3)), 't')).id;
+  const id2 = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-2', 2)), 't')).id;
   assert.equal(id1, 'RUN-20261110-01'); assert.equal(id2, 'RUN-20261110-02');
   ctx.saveRun(JSON.stringify(payload(id1, 'FAM-1b', 4)), 't');      // re-save with a bigger roster
   const r1 = JSON.parse(ctx.getRun(id1)), r2 = JSON.parse(ctx.getRun(id2));
@@ -66,4 +66,31 @@ test('saveRun assigns IDs, replaces a run\'s rows on re-save and deleteRun remov
   assert.equal(after.runs.length, 1); assert.equal(after.scores.length, 1);
   assert.equal(JSON.parse(ctx.getRun(id2)).roster.length, 2);
   assert.ok(ss._sheets.Log._data.length >= 4);
+});
+
+test('multi-user: owner kept, last saver recorded, stale saves refused, old header row extended', () => {
+  const { ctx, ss } = load();
+  ctx.getBootstrap();
+  // Simulate a sheet created by the earlier version (fewer Runs columns).
+  const oldHdr = ctx.SCHEMA.Runs.slice(0, 23);
+  ss._sheets.Runs._data.length = 0; ss._sheets.Runs._data.push(oldHdr.slice());
+  ctx.setupSheet();
+  assert.deepEqual(ss._sheets.Runs._data[0], ctx.SCHEMA.Runs);
+  let who = 'ana@dswd.gov.ph';
+  ctx.Session.getActiveUser = () => ({ getEmail: () => who });
+  const a = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-9', 2)), 'Ana'));
+  assert.equal(a.createdBy, 'ana@dswd.gov.ph'); assert.equal(a.revision, 1);
+  who = 'ben@dswd.gov.ph';
+  const p2 = payload(a.id, 'FAM-9', 2); p2.baseRevision = 1;
+  const b = JSON.parse(ctx.saveRun(JSON.stringify(p2), 'Ben'));
+  assert.equal(b.createdBy, 'ana@dswd.gov.ph'); assert.equal(b.savedBy, 'ben@dswd.gov.ph'); assert.equal(b.revision, 2);
+  who = 'ana@dswd.gov.ph';
+  const stale = payload(a.id, 'FAM-9', 2); stale.baseRevision = 1;
+  assert.throws(() => ctx.saveRun(JSON.stringify(stale), 'Ana'), /saved by ben@dswd.gov.ph/);
+  const run = JSON.parse(ctx.getBootstrap()).runs.find(r => r['Run ID'] === a.id);
+  assert.equal(run['Created by'], 'ana@dswd.gov.ph'); assert.equal(run['Last saved by'], 'ben@dswd.gov.ph');
+  // No Google identity (consumer accounts): fall back to the tester name typed in the app.
+  who = '';
+  const c = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-10', 1)), 'Carla'));
+  assert.equal(c.createdBy, 'Carla');
 });
