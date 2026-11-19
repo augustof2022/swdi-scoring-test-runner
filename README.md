@@ -3,7 +3,7 @@
 Test tool for **Enhanced SWDI scoring** in the **SWDI App** (mobile) and **4Ps Forward** (Odoo SWDI Review).
 
 * Testers use real households that already exist in the SWDI App. They record the **roster as the app lists it** (name, age, sex, relationship, status), so every age filter is exercised.
-* **Guided mode** proposes the value to enter for each question, chosen from the members' ages to hit scenarios that no earlier run has covered. **Record mode** logs whatever the tester entered.
+* **Guided mode** previews new family levels, member combinations, scoring boundaries and open platform checks for the entered roster. It compares saved runs across test instances for coverage and replays discrepancies on the instance where they were observed. **Record mode** logs whatever the tester entered.
 * The **scoring engine** grades automatically and shows its reasoning: for every indicator and member it states the criterion applied, who was excluded by age, and how the family level was aggregated. No manual grading.
 * After sync, the tester types or pastes the scores shown by each platform. Every indicator gets a verdict: `PASS`, `STATA RULE`, `ROUNDING`, `FAIL` or `N/A CHECK`.
 * Everything is stored in a Google Sheet (runs, roster, entries, scores, scenario coverage, dashboard).
@@ -14,7 +14,7 @@ Test tool for **Enhanced SWDI scoring** in the **SWDI App** (mobile) and **4Ps F
 |---|---|
 | Data sheet | `config.json → sheetId` ([SWDI Scoring Test Runner — Data](https://docs.google.com/spreadsheets/d/1gn8McB-G4chm4NzzVI9rb25Vo4sfUmqzp5RALhoKMIU/edit)) |
 | Scoring engine (target + Stata rule sets, criteria trail) | `engine/swdi-engine.js` |
-| Guided planner (engine-driven scenario search) | `engine/swdi-planner.js` |
+| Guided planner and case history | `engine/swdi-planner.js`, `engine/swdi-coverage.js` |
 | Form definitions and choice lists (BRVD Annex A v0.4) | `engine/swdi-fields.js` (generated) |
 | Scenario catalog (313 branches, boundaries, option spread, rule conflicts) | `engine/swdi-scenarios.js` (generated from `sheet/scenario_ids.json`) |
 | Apps Script back end | `src/Code.js`, `src/appsscript.json` |

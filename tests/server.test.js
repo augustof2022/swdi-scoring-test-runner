@@ -38,7 +38,9 @@ function load() {
     Utilities: { formatDate: (d, tz, f) => f === 'yyyyMMdd' ? '20261110' : d.toISOString() }, HtmlService: {}, JSON, Date
   };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/Code.js'), 'utf8'), ctx);
+  const source = file => fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
+  const variables = require('../engine/swdi-coverage').variables;
+  vm.runInContext(source('Code.js').replace('/*PLANNING_VARIABLES*/[]', JSON.stringify(variables)) + '\n' + source('planning-records.js'), ctx);
   return { ctx, ss };
 }
 const payload = (id, fam, n) => ({
@@ -93,4 +95,25 @@ test('multi-user: owner kept, last saver recorded, stale saves refused, old head
   who = '';
   const c = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-10', 1)), 'Carla'));
   assert.equal(c.createdBy, 'Carla');
+});
+
+test('planning reads existing scores and actual scoring inputs without changing a saved run or returning identities and free text', () => {
+  const {ctx, ss} = load();
+  ctx.getBootstrap();
+  const input = payload('', 'PRIVATE-HOUSEHOLD', 2);
+  input.run.Environment = 'Newlogic Preprod';
+  input.roster[0].Name = 'Private name';
+  input.roster[1]['Member status'] = 'Moved Out';
+  input.entries[1]['Suggested value'] = 1;
+  input.entries.push({Key:'x|1|jobind_specify', 'Member #':1, Variable:'jobind_specify', Value:'private free text'});
+  ctx.saveRun(JSON.stringify(input),'example');
+  const before = JSON.stringify(ss._sheets);
+  const text = ctx.getPlanningHistory(), [r] = JSON.parse(text);
+  assert.equal(JSON.stringify(ss._sheets),before);
+  assert.doesNotMatch(text,/PRIVATE-HOUSEHOLD|Private name|private free text|@/);
+  assert.equal(r.env,'Newlogic Preprod');
+  assert.equal(r.household.hh.roof,1);
+  assert.equal(r.household.members[0].sickind,2);
+  assert.equal(r.household.members[1].status,3);
+  assert.equal(r.scores[0].verdicts['Recorded platform'],'PASS');
 });

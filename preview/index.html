@@ -82,6 +82,12 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8
 .compare-body details{border-top:1px solid var(--line);margin-top:5px}
 .toast{position:fixed;right:18px;bottom:18px;background:#1d2733;color:#fff;padding:10px 14px;border-radius:8px;opacity:0;transform:translateY(8px);transition:.2s;z-index:50}
 .toast.on{opacity:1;transform:none}
+.busy-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(244,246,249,.65);backdrop-filter:blur(2px)}
+.busy-overlay[hidden],#thChip[hidden]{display:none!important}
+.busy-dialog{display:flex;align-items:center;gap:12px;max-width:calc(100vw - 32px);padding:18px 22px;background:var(--card);border:1px solid var(--line);box-shadow:0 12px 34px rgba(29,39,51,.17);border-radius:12px;font-weight:650}
+.busy-spinner{width:23px;height:23px;flex:none;border:3px solid #dae2ec;border-top-color:var(--navy);border-radius:50%;animation:busy-spin .7s linear infinite}
+@keyframes busy-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.busy-spinner{animation-duration:2s}}
 .legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;align-items:center}
 .tchip{display:inline-block;font-size:11px;background:#e3eefc;color:#173f73;border-radius:4px;padding:0 5px;margin:1px 3px 1px 0}
 table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
@@ -93,10 +99,10 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
 <body>
 <div class="top">
   <h1>SWDI Scoring Test Runner</h1>
-  <span class="chip" id="appRelease" aria-label="App version">v2.1.0 · a163ebfc</span>
+  <span class="chip" id="appRelease" aria-label="App version">v2.2.0 · ab16b6de</span>
   <span class="chip" id="modeChip">loading…</span>
   <span class="sp"></span>
-  <span class="chip" id="thChip"></span>
+  <span class="chip" id="thChip" hidden></span>
   <label class="chip">Tester <input id="tester" list="testerList" placeholder="your name" style="width:150px"><datalist id="testerList"></datalist></label>
 </div>
 <div class="wrap">
@@ -117,6 +123,9 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
   <main id="main"><div class="card">Loading…</div></main>
 </div>
 <div class="toast" id="toast"></div>
+<div class="busy-overlay" id="busyOverlay" hidden role="status" aria-live="polite" aria-atomic="true">
+  <div class="busy-dialog"><span class="busy-spinner" aria-hidden="true"></span><span id="busyMessage">Working…</span></div>
+</div>
 <script>/* SWDI Scoring Engine — test oracle for the Enhanced SWDI (25 indicators).
  *
  * Two rule sets are computed side by side:
@@ -457,8 +466,11 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
       if (pci < food) { lvl = 1; br = 'C.L1.food_poor'; why += ' < food ₱' + food; }
       else if (pci < pov) { lvl = 2; br = 'C.L2.income_poor'; why += ' ≥ food ₱' + food + ' and < poverty ₱' + pov; }
       else { lvl = 3; br = 'C.L3.not_income_poor'; why += ' ≥ poverty ₱' + pov; }
-      if (Math.abs(pci - food) < 1) extra.push('C.bnd.pci_at_food_threshold');
-      if (Math.abs(pci - pov) < 1) extra.push(pci >= pov ? 'C.bnd.pci_at_poverty_threshold' : 'C.bnd.pci_just_below_poverty');
+      [[food, 'food'], [pov, 'poverty']].forEach(function (cut) {
+        var delta = pci - cut[0];
+        if (Math.abs(delta) < 1e-9) extra.push('C.bnd.pci_at_' + cut[1] + '_threshold');
+        else if (Math.abs(delta) < 1) extra.push('C.bnd.pci_just_' + (delta < 0 ? 'below_' : 'above_') + cut[1]);
+      });
     } else why += ' — thresholds not set';
     if (members.some(function (m) { return incomeParts(m).cct > 0; })) extra.push('C.case.4ps_cct_excluded');
     if (members.some(function (m) { return (age(m) || 99) < 15 && incomeParts(m).earn > 0; })) extra.push('C.case.under15_income_excluded');
@@ -916,16 +928,239 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
   else root.SWDI = api;
 })(this);
 </script>
-<script>/* SWDI Guided-test planner.
- * Given the real roster of the household picked in the SWDI App (names, ages, status) and the set of
- * scenarios already exercised, it proposes the values to enter so that this interview hits as many
- * not-yet-covered scenarios as possible. The scoring engine is the oracle: every candidate value set
- * is scored and kept only if it newly exercises catalogued scenarios.
- * Requires swdi-engine.js (SWDI) in the same scope.
- */
+<script>/* Guided planning history. Cases contain only the responses read by the two scoring rules. */
+(function (root) {
+  'use strict';
+  const E = typeof module !== 'undefined' && module.exports ? require('./swdi-engine') : root.SWDI;
+  const words = s => s.split(' ');
+  const member = {
+    A: words('skills_n skills regskill1 regskill2 regskill3 educind gradel educal'),
+    B: words('occup_s worked_last_week workind jobind jstatus avail willing'),
+    C: words('ofw wagcshm wagcomm wagothm entrep_income other_income other_period pantawidcsh pantawidknd other_cct'),
+    D: words('sssind sss_months gsisind gsis_months'), E: words('insurance finance_acct savings'),
+    F: words('sickind avail_med ynotavail_med'), G: words('sickind confine'),
+    H: words('stuntingind wastingind underweightind overweightind'), L: words('literacy_read literacy_write literacy_count literacy_understand'),
+    M: words('internet digiact'), N: words('educind schattendance'), V: words('orgmem orgact1 orgofficer1'),
+    W: words('birthreg vaccine educind schattendance childlabor childlabor_yes')
+  };
+  const hh = { C: words('imprnt imprnt_period'), I: words('water water_dist'), J: words('toil toil_shared'), K: ['garbage'],
+    O: words('roof location'), P: words('wall location'), Q: ['tenur'], R: ['light'], S: E.ASSET_VARS.concat(E.LAND_VARS),
+    T: E.PARENT_VARS, U: E.PROBLEMS.flatMap(p => [p, p + '_sol', p + '_res']), X: words('gvbind gvb_action'),
+    Y: words('location gida disastkit disastkit_all disasknow_hotline disasknow_evac disasknow_hosp disasknow_other disasplan emersavings')
+      .concat(E.DISASTERS.flatMap(d => [d, d + '_r'])) };
+  const codes = E.INDICATORS.map(d => d.code);
+  const totals = {ES:'es_raw', SA:'sa_raw', TOTAL:'total', LOWB:'lowb'};
+  const averaged = new Set(E.INDICATORS.filter(d => d.agg === 'AVG').map(d => d.code));
+  const variables = [...new Set(Object.values(hh).concat(Object.values(member)).flat())];
+  const limits = { A: [15, 18], B: [15], C: [15], D: [15], E: [15], H: [19],
+    L: [5, 6, 9, 10, 11, 64, 65], M: [10, 11, 64, 65], N: [3, 4, 18, 19], V: [15], W: [3, 5, 6, 18] };
+  const ranges = { A: [15, Infinity], B: [15, Infinity], D: [15, Infinity], E: [15, Infinity], H: [0,18],
+    L: [5,64], M: [10,64], N: [3,18], V: [15,Infinity], W: [0,17] };
+  const active = m => !m.status || Number(m.status) === 1;
+  function eligible(code, m) {
+    const range = ranges[code];
+    return active(m) && (!range || (m.age >= range[0] && m.age <= range[1]));
+  }
+  function applicable(code, roster) {
+    return !member[code] || !roster || roster.some(m => eligible(code,m));
+  }
+  function band(code, m) {
+    if (!active(m)) return 'inactive';
+    return (limits[code] || []).filter(n => m.age >= n).length;
+  }
+  const multi = new Set(['skills','digiact','vaccine','gvbind','disastkit']);
+  function value(x, field) {
+    if (x == null || x === '') return '';
+    if (multi.has(field)) return E.arr(x).sort((a,b) => a-b).join(';');
+    const n = E.num(x);
+    return n === null ? String(x) : n;
+  }
+  function answer(record, key) {
+    if (key === 'imprnt_period') return Number(record.imprnt) ? (Number(record[key]) === 2 ? 2 : 1) : '';
+    if (key === 'other_period') return Number(record.other_income) ? (Number(record[key]) === 1 ? 1 : 2) : '';
+    if (key === 'ynotavail_med' && Number(record.avail_med) !== 2) return '';
+    return value(record[key], key);
+  }
+  function memberValues(code, m) {
+    if ((!eligible(code, m) && code !== 'E' && code !== 'C') || (!active(m) && code !== 'C')) return [];
+    // Employment compares the job, reference week and nature of work in both entry schemas.
+    if (code === 'B') {
+      const modern = value(m.occup_s) !== '';
+      const employed = modern ? Number(m.occup_s) !== 999 : Number(m.workind) === 1 || Number(m.jobind) === 1;
+      return employed ? ['job', value(modern ? m.worked_last_week : m.workind), value(m.jstatus)] :
+        ['none', value(modern ? 2 : m.workind), value(m.avail), value(m.willing)];
+    }
+    return (member[code] || []).map(k => answer(m,k));
+  }
+  function signature(code, household, thresholds) {
+    const th = thresholds || {};
+    if (totals[code]) {
+      // Keep each person's responses together, including when two households have the same marginal scores.
+      const home = Object.keys(hh).map(c => hh[c].map(k => answer(household.hh,k)));
+      const people = household.members.map(m => JSON.stringify(Object.keys(member).map(c => [band(c,m),memberValues(c,m)]))).sort();
+      return JSON.stringify([home, people, value(th.food), value(th.poverty)]);
+    }
+    const home = (hh[code] || []).map(k => answer(household.hh,k));
+    const rows = member[code] ? household.members.filter(m => active(m) || code === 'C')
+      .map(m => JSON.stringify([band(code, m), memberValues(code, m)])).sort() : [];
+    return JSON.stringify([home, rows, code === 'C' ? [value(th.food), value(th.poverty)] : []]);
+  }
+  function memberMix(result) {
+    if (!result.members || !result.members.some(m => m.level != null)) return '';
+    return result.members.map(m => m.level == null ? 'excluded' : m.level).sort().join('/');
+  }
+  function branches(both, code) {
+    if (code === 'LOWB') return both.target.branches.filter(b => b.startsWith('Z.'));
+    if (totals[code]) return [];
+    return [...new Set(both.target.indicators[code].branches.concat(
+      both.stata.indicators[code].branches.filter(b => /\.div\.|stata_missing|precedence_bug/.test(b))))];
+  }
+  function boundary(code, level, total, branches) {
+    if (code === 'C') {
+      const id = (branches || []).find(b => b.startsWith('C.bnd.pci_just_'));
+      if (id) return 'PCI ' + id.split('pci_')[1].replace(/_/g,' ') + ' threshold';
+    }
+    if (code === 'LOWB' && total != null) {
+      for (const cut of [E.CUT2,E.CUT3]) if (Math.abs(total - cut) < 0.02) return (total < cut ? 'Just below ' : 'At or just above ') + cut + ' LOWB cutoff';
+    }
+    if (averaged.has(code) && level != null && !Number.isInteger(level)) {
+      const midpoint = Math.floor(level) + 0.5;
+      return (level === midpoint ? 'At ' : level < midpoint ? 'Below ' : 'Above ') + midpoint + ' rounding midpoint';
+    }
+    return '';
+  }
+  function environment(v) {
+    return ({Preprod: 'Newlogic Preprod', 'Preprod load test': 'DSWD Preprod Load Test'})[v] || v || '';
+  }
+  function history(records, env, excludeId) {
+    const stats = {};
+    codes.concat(Object.keys(totals)).forEach(c => { stats[c] = {levels: new Map(), cases: new Map(), mixes: new Set(), boundaries: new Set(), issues: [], seen: 0}; });
+    const seen = new Set(), checked = new Set(), open = new Map(), fullCases = new Map();
+    const baseline = records.filter(r => r.id !== excludeId).sort((a,b) => String(a.savedAt || a.id).localeCompare(String(b.savedAt || b.id)) || a.id.localeCompare(b.id));
+    for (const r of baseline) {
+      const scored = r.household && E.score(r.household, {thresholds: r.thresholds});
+      const fullKey = scored && signature('TOTAL', r.household, r.thresholds);
+      if (fullKey) fullCases.set(fullKey, r.id);
+      const storedTotal = r.scores.find(s => s.code === 'TOTAL');
+      for (const row of r.scores) {
+        const stat = stats[row.code];
+        if (!stat) continue;
+        const verdicts = Object.entries(row.verdicts).filter(([,v]) => v);
+        let exercised = row.branches;
+        // Older builds credited exact income thresholds within a one-peso interval.
+        if (row.code === 'C' && scored && r.thresholds && E.num(r.thresholds.food) !== null && E.num(r.thresholds.poverty) !== null) {
+          exercised = exercised.filter(b => !b.startsWith('C.bnd.pci_')).concat(scored.indicators.C.branches.filter(b => b.startsWith('C.bnd.pci_')));
+        }
+        exercised.forEach(b => { seen.add(b); if (verdicts.length) checked.add(b); });
+        const level = E.num(row.level);
+        if (level !== null && applicable(row.code, r.household ? r.household.members : r.roster)) {
+          const counts = stat.levels.get(level) || {planned: 0, checked: 0, passed: 0};
+          counts.planned++;
+          if (verdicts.length) counts.checked++;
+          if (verdicts.some(([,v]) => v === 'PASS')) counts.passed++;
+          stat.levels.set(level, counts);
+        }
+        stat.seen++;
+        const edge = boundary(row.code, level, storedTotal && E.num(storedTotal.level), exercised);
+        if (edge) stat.boundaries.add(edge);
+        const key = totals[row.code] ? fullKey : (scored ? signature(row.code, r.household, r.thresholds) : '');
+        if (key && !totals[row.code]) {
+          stat.cases.set(key, 1 + (stat.cases.get(key) || 0));
+          const mix = memberMix(scored.indicators[row.code]);
+          if (mix) stat.mixes.add(mix);
+        }
+        if (environment(r.env) !== environment(env)) continue;
+        const platforms = new Set(['SWDI App', '4Ps Forward', ...Object.keys(row.verdicts)]);
+        for (const platform of platforms) {
+          const verdict = row.verdicts[platform];
+          // A pass on another platform, family outcome, or set of responses cannot close a previous discrepancy.
+          const id = JSON.stringify([row.code, key || r.id, level, platform]);
+          const prior = open.get(id);
+          if (!verdict) {
+            if (prior && key) prior.pendingRun = r.id;
+            continue;
+          }
+          if (verdict === 'PASS') { open.delete(id); continue; }
+          open.set(id, {code: row.code, key, level, platform, verdict, run: r.id, source: r.household,
+            thresholds: r.thresholds, attempts: prior ? prior.attempts + 1 : 1});
+        }
+      }
+    }
+    for (const issue of open.values()) stats[issue.code].issues.push(issue);
+    return {stats, seen, checked, fullCases, runs: baseline.length};
+  }
+  function fits(needs, roster) {
+    const ages = roster.filter(active).map(m => Number(m.age));
+    const count = (lo, hi) => ages.filter(a => a >= lo && a <= hi).length;
+    if (needs === 'no member 0-17') return !count(0,17);
+    if (needs === '3+ members, 2 adults') return ages.length >= 3 && count(15, Infinity) >= 2;
+    if (needs === '2+ members 15+') return count(15, Infinity) >= 2;
+    if (needs === '2+ children 0-17') return count(0,17) >= 2;
+    const exact = /aged exactly (\d+)/.exec(needs), range = /(?:member|child)(?: aged)? (\d+)-(\d+)/.exec(needs);
+    const under = /member under (\d+)/.exec(needs), above = /member (\d+)\+/.exec(needs);
+    if (exact) return ages.includes(Number(exact[1]));
+    if (range) return count(Number(range[1]), Number(range[2])) > 0;
+    if (under) return count(0, Number(under[1])-1) > 0;
+    if (above) return count(Number(above[1]), Infinity) > 0;
+    return true;
+  }
+  function rosterNeed(s, roster) {
+    if (s.id.includes('.f.')) {
+      return roster.filter(m => eligible(s.ind, m)).length < 2 ? 'At least two eligible members for ' + s.ind : '';
+    }
+    if (s.id === 'C.case.moved_out_or_deceased_excluded') {
+      if (!roster.some(m => !active(m))) return 'An inactive roster member';
+    }
+    return fits(s.needs, roster) ? '' : s.needs;
+  }
+  const api = {hh, member, variables, codes, totals, boundary, active, eligible, applicable, band, signature, memberMix, branches, history, fits, rosterNeed};
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SWDICoverage = api;
+})(this);
+</script>
+<script>function planningRoster_(roster) {
+  return roster.map(r => ({'Run ID': r['Run ID'], 'Member #': r['Member #'], Age: r.Age, 'Member status': r['Member status']}));
+}
+
+// Reduce the Runs, Scores, Roster and Entries tables to the inputs needed for the next preview.
+function planningRecords_(runs, scores, roster, entries, variables) {
+  const allowed = new Set(variables), records = new Map(), members = new Map();
+  runs.forEach(r => {
+    const id = String(r['Run ID']);
+    records.set(id, {id, savedAt: r['Updated at'] || r['Created at'] || '', env: r.Environment || '', thresholds: {food: r['Food threshold'], poverty: r['Poverty threshold']}, household: null, scores: []});
+    members.set(id, new Map());
+  });
+  roster.forEach(row => {
+    const id = String(row['Run ID']), r = records.get(id);
+    if (!r || row.Age === '' || row.Age == null) return;
+    const status = row['Member status'];
+    const m = {no: Number(row['Member #']), age: Number(row.Age), status: ({Active:1, Deceased:2, 'Moved Out':3})[status] || Number(status) || 1};
+    members.get(id).set(m.no, m);
+  });
+  entries.forEach(row => {
+    const id = String(row['Run ID']), r = records.get(id), key = row.Variable;
+    if (!r || !allowed.has(key) || !members.get(id).size || row.Value == null || row.Value === '') return;
+    if (!r.household) r.household = {hh: {}, members: Array.from(members.get(id).values())};
+    const no = Number(row['Member #']), target = no ? members.get(id).get(no) : r.household.hh;
+    if (target) target[key] = row.Value;
+  });
+  scores.forEach(s => {
+    const r = records.get(String(s['Run ID']));
+    if (!r) return;
+    const verdicts = {'SWDI App': s['SWDI App verdict'] || '', '4Ps Forward': s['4Ps Forward verdict'] || ''};
+    if (!Object.values(verdicts).some(Boolean) && s['Final verdict']) verdicts['Recorded platform'] = s['Final verdict'];
+    if (allowed.size && !r.household && !Object.values(verdicts).some(Boolean)) return;
+    r.scores.push({code: s.Code, level: s['Expected level (target)'], branches: String(s['Scenarios exercised'] || '').split('|').filter(Boolean),
+      verdicts});
+  });
+  for (const r of records.values()) if (!r.household && members.get(r.id).size) r.roster = Array.from(members.get(r.id).values());
+  return Array.from(records.values());
+}
+</script>
+<script>/* Guided planning uses the policy and BRVD scoring engines to evaluate the final answers. */
 (function (root) {
   'use strict';
   var E = (typeof module !== 'undefined' && module.exports) ? require('./swdi-engine.js') : root.SWDI;
+  var C = (typeof module !== 'undefined' && module.exports) ? require('./swdi-coverage') : root.SWDICoverage;
   var ALL_VAX = '1;2;3;4;5;6;7;8';
   var ALL_KIT = []; for (var i = 1; i <= 19; i++) ALL_KIT.push(i); ALL_KIT = ALL_KIT.join(';');
   var PARENT = E.PARENT_VARS;
@@ -937,7 +1172,6 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     if (a === 16) return 34011; if (a === 17) return 34012; if (a === 18) return 34012;
     return 60001;
   }
-  function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function age(m) { return Number(m.age); }
   function isActive(m) { return !m.status || Number(m.status) === 1; }
 
@@ -959,7 +1193,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     if (a >= 19) { o.educind = 2; o.educal = 24014; }
     if (a >= 5 && a <= 64) { o.literacy_read = 1; o.literacy_write = 1; o.literacy_count = 1; }
     if (a >= 10 && a <= 64) { o.literacy_understand = 1; o.internet = 1; o.digiact = a < 18 ? '1' : '2'; }
-    if (a >= 5 && a <= 17) o.childlabor_yes = 2;
+    if (a >= 5 && a <= 17) o.childlabor = 0;
     if (a >= 15) {
       o.ofw = 2; o.skills_n = 0; o.sssind = 2; o.gsisind = 2; o.insurance = 2; o.finance_acct = 2; o.savings = 2; o.orgmem = 2;
       if (a >= 19 && a <= 64) { o.workind = 1; o.jstatus = 1; } else { o.workind = 2; o.jobind = 2; o.avail = 2; o.willing = 2; }
@@ -1053,7 +1287,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     if (a <= 17) {
       add('W', { birthreg: 2 });
       if (a <= 5) { add('W', { vaccine: '1;7' }); add('W', { vaccine: '1;2;3;4;5;6;7' }); add('W', { vaccine: '' }); }
-      if (a >= 5) add('W', { childlabor_yes: 1, childlabor: 1 });
+      if (a >= 5) add('W', { childlabor: 1 });
     }
     return c;
   }
@@ -1077,122 +1311,321 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     return c;
   }
 
-  // ---------- scoring of candidates ----------
-  function weight(b) {
-    if (/^Z\./.test(b)) return 0;
-    if (/\.div\./.test(b)) return 6;
-    if (/\.chk\./.test(b)) return 4;
-    if (/\.bnd\./.test(b)) return 3;
-    if (/\.L\d/.test(b)) return 3;
-    if (/\.case\./.test(b)) return 2;
-    return 1;
+  // Score a complete candidate against the history. Shared fields can change several indicators.
+  function entries(raw) {
+    return {hh: raw.hh, members: raw.members.map(function (m) {
+      const out = Object.assign({}, m);
+      if (isActive(m)) setEmploymentAnswers(out, m.age);
+      return out;
+    })};
   }
-  function branchesOf(plan, th) {
-    var b = E.scoreBoth(plan, { thresholds: th });
-    var s = {};
-    b.target.branches.forEach(function (x) { s[x] = 1; });
-    b.stata.branches.forEach(function (x) { if (/\.div\.|stata_missing|precedence_bug/.test(x)) s[x] = 1; });
-    return s;
+  function patchPlan(plan, patches) {
+    const copy = {hh: Object.assign({}, plan.hh), members: plan.members.map(m => Object.assign({}, m))};
+    const members = new Map(copy.members.map(m => [m.no, m]));
+    patches.forEach(([key, values]) => Object.assign(key === 'hh' ? copy.hh : members.get(key), values));
+    return copy;
   }
-  function gain(after, before, want) {
-    var g = 0, hits = [];
-    Object.keys(after).forEach(function (b) { if (!before[b] && want[b]) { g += weight(b); hits.push(b); } });
-    return { g: g, hits: hits };
+  function issueMatch(issue, key, level) {
+    return !issue.pendingRun && issue.key === key && (issue.level === level ||
+      (issue.level != null && level != null && Math.abs(issue.level - level) < 0.000006));
   }
-  function lockedConflict(locks, key, patch) {
-    var L = locks[key] || {};
-    return Object.keys(patch).some(function (v) { return v in L && String(L[v]) !== String(patch[v]); });
+  function catalogWeight(id) {
+    if (/\.div\.|\.chk\.|\.bnd\./.test(id)) return 4;
+    if (/\.L\d|^Z\./.test(id)) return 3;
+    return 2;
   }
-  function lock(locks, key, patch) { locks[key] = locks[key] || {}; Object.keys(patch).forEach(function (v) { locks[key][v] = patch[v]; }); }
-
-  /**
-   * roster: [{no, name, age, sex, status}]  •  uncovered: array of scenario IDs still to test (catalog)
-   * thresholds: {food, poverty}  •  returns {household, targets:[{where, ind, values, scenarios}], income}
-   */
-  function plan(roster, uncovered, thresholds) {
-    var want = {}; (uncovered || []).forEach(function (b) { want[b] = 1; });
-    var P = { hh: hhDefaults(), members: roster.map(function (m) { return Object.assign({ no: m.no, name: m.name, age: Number(m.age), status: m.status || 1 }, memberDefaults(m)); }) };
-    var locks = {}, targets = [];
-    var cur = branchesOf(P, thresholds);
-    function tryApply(where, ind, applyFns) {
-      // applyFns: list of {label, apply(planCopy), patches:[[key, patch]]}
-      var best = null;
-      applyFns.forEach(function (cand) {
-        if (cand.patches.some(function (kp) { return lockedConflict(locks, kp[0], kp[1]); })) return;
-        var Q = clone(P); cand.patches.forEach(function (kp) { applyPatch(Q, kp[0], kp[1]); });
-        var after = branchesOf(Q, thresholds), g = gain(after, cur, want);
-        if (g.g > 0 && (!best || g.g > best.g.g)) best = { cand: cand, Q: Q, after: after, g: g };
+  function purpose(code, actual, both, thresholds, history, want) {
+    const ids = C.branches(both, code);
+    let points = ids.reduce((n, id) => n + (want.has(id) ? catalogWeight(id) : 0), 0);
+    if (!history) return points;
+    const stat = history.stats[code], result = both.target.indicators[code];
+    const level = result ? result.level : both.target[C.totals[code]];
+    // Fractional averages and unobserved draft outcomes remain distinct from checked integer levels.
+    if ((result || code === 'LOWB') && C.applicable(code, actual.members) && [1,2,3].includes(level) && !stat.levels.has(level)) points += stat.seen ? 32 : 3;
+    const edge = C.boundary(code, level, both.target.total, ids);
+    if (stat.seen && edge && !stat.boundaries.has(edge)) points += 6;
+    if (!result && !stat.issues.length) return points;
+    const key = C.signature(code, actual, thresholds), mix = result && C.memberMix(result);
+    const usable = level != null || ids.some(id => /\.na\.|\.excl\.|\.chk\./.test(id));
+    if (usable && stat.cases.size && !stat.cases.has(key)) points += 3;
+    if (level != null && mix && stat.mixes.size && !stat.mixes.has(mix)) points += 5;
+    const issues = stat.issues.filter(i => issueMatch(i, key, level));
+    // Retests compete with novelty. Repeated open discrepancies get fewer successive interviews.
+    if (issues.length) {
+      const priority = result ? 1 : 3;
+      points += priority * Math.max(...issues.map(i => (i.verdict === 'FAIL' ? 55 : 42) / i.attempts));
+    }
+    return points;
+  }
+  function memberOptions(ind, m) {
+    const cs = memberCands(m).filter(c => c.ind === ind).map(c => Object.assign({}, c.patch));
+    if (!cs.length) return [];
+    const defaults = memberDefaults(m);
+    const reset = (keys, p) => Object.assign(Object.fromEntries(keys.map(k => [k, defaults[k] == null ? '' : defaults[k]])), p);
+    if (ind === 'B') return cs.map(p => reset(['workind','jobind','jstatus','avail','willing'], p));
+    if (ind === 'A') return cs.map(p => reset(['skills_n','regskill1','regskill2','regskill3'], p));
+    if (ind === 'G') return cs.concat([{}]).map(p => reset(C.member.G, {sickind: p.sickind || 2, confine: p.confine || 2}));
+    if (ind === 'F') return cs.concat([{avail_med: 2, ynotavail_med: 5}]).map(p => {
+      delete p.confine;
+      if (p.avail_med === 1) p.ynotavail_med = '';
+      return p;
+    });
+    if (ind === 'N') return cs.concat([{schattendance: 3}]).map(p =>
+      p.educind === 2 ? p : Object.assign({educind: 1, gradel: gradeFor(m.age), educal: ''}, p));
+    if (ind === 'W') {
+      const good = {birthreg: 1};
+      if (m.age <= 5) good.vaccine = ALL_VAX;
+      if (m.age >= 5) good.childlabor = 0;
+      if (m.age >= 3) Object.assign(good, {educind: 1, gradel: gradeFor(m.age), educal: '', schattendance: 3});
+      const low = Object.assign({}, good, {birthreg: 2});
+      if (m.age <= 5) low.vaccine = '';
+      if (m.age >= 3) low.schattendance = 1;
+      if (m.age >= 5) low.childlabor = 1;
+      return cs.concat([good, low]);
+    }
+    if (ind === 'H' || ind === 'L' || ind === 'M' || ind === 'D') {
+      return cs.concat([{}]).map(p => reset(C.member[ind], p));
+    }
+    return cs;
+  }
+  // Try coordinated family outcomes as well as changes to each individual member.
+  function memberSearch(code, raw, choose, thresholds) {
+    const groups = raw.members.filter(isActive).map(m => {
+      const options = memberOptions(code, m), byLevel = {};
+      options.forEach(p => {
+        const one = entries({hh: raw.hh, members: [Object.assign({}, m, p)]});
+        const level = E.score(one, {thresholds}).indicators[code].level;
+        if (level !== null) (byLevel[level] || (byLevel[level] = [])).push(p);
       });
-      if (best) {
-        P = best.Q; cur = best.after;
-        best.cand.patches.forEach(function (kp) { lock(locks, kp[0], kp[1]); });
-        targets.push({ where: where, ind: ind, patches: best.cand.patches, scenarios: best.g.hits });
+      return {no: m.no, options, byLevel};
+    }).filter(g => g.options.length);
+    if (!groups.length) return;
+    const bundles = [];
+    for (const pattern of [[1],[2],[3],[1,2,3],[3,2,1],[1,3],[1,2],[2,3]]) {
+      for (let variant = 0; variant < 2; variant++) {
+        const patches = groups.map((g,i) => {
+          const opts = g.byLevel[pattern[i % pattern.length]];
+          return opts && [g.no, opts[(i + variant) % opts.length]];
+        });
+        if (patches.every(Boolean)) bundles.push(patches);
       }
     }
-    function applyPatch(Q, key, patch) {
-      if (key === 'hh') Object.assign(Q.hh, patch);
-      else { var m = Q.members.filter(function (x) { return x.no === key; })[0]; if (m) Object.assign(m, patch); }
+    choose(bundles);
+    groups.forEach(g => choose(g.options.map(p => [[g.no, p]])));
+  }
+
+  // Apply historical scoring inputs only to a compatible roster. Acceptance is based on the final signature.
+  function replayHousehold(source, current) {
+    const profile = m => JSON.stringify(Object.keys(C.member).map(c => C.band(c,m)));
+    const buckets = new Map();
+    for (const m of source.members) {
+      const key = profile(m);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(m);
     }
-    // household slots
-    HH_SLOTS.forEach(function (s) { tryApply('Household', s.ind, s.cands().map(function (p) { return { patches: [['hh', p]] }; })); });
-    // family composition: children's rights first (it constrains school/vaccines), then E, V
-    var act = P.members.filter(isActive);
-    var adults = act.filter(function (m) { return m.age >= 15; }).map(function (m) { return m.no; });
-    var kids = act.filter(function (m) { return m.age <= 17; });
-    if (kids.length) {
-      var wc = [];
-      kids.forEach(function (k) { memberCands(k).filter(function (c) { return c.ind === 'W'; }).forEach(function (c) { wc.push({ patches: [[k.no, c.patch]] }); }); });
-      if (kids.length >= 2) wc.push({ patches: kids.map(function (k) { return [k.no, k.age >= 3 ? { birthreg: 2, educind: 2, gradel: '', schattendance: '' } : { birthreg: 2, vaccine: '' }]; }) });
-      tryApply('Children 0-17', 'W', wc);
+    if (source.members.length !== current.members.length) return null;
+    const extract = (keys, from) => Object.fromEntries(keys.map(k => [k, from[k] == null ? '' : from[k]]));
+    const patches = [['hh', extract(Object.values(C.hh).flat(), source.hh)]];
+    for (const m of current.members) {
+      const matches = buckets.get(profile(m));
+      if (!matches || !matches.length) return null;
+      const p = extract(Object.values(C.member).flat(), matches.shift());
+      if (isActive(m) && m.age >= 15 && !p.occup_s) setEmploymentAnswers(p, m.age);
+      if (Number(p.childlabor_yes) === 1 && !Number(p.childlabor)) return null;
+      if (Number(p.childlabor) > 0) { p.work_hrs = m.work_hrs || 2; p.work_tothrs = m.work_tothrs || 4; }
+      patches.push([m.no, p]);
     }
-    familyCands(adults).forEach(function () {});
-    ['E', 'V'].forEach(function (ind) { tryApply('Members 15+', ind, familyCands(adults).filter(function (c) { return c.ind === ind; })); });
-    // member slots
-    act.forEach(function (m) {
-      var cs = memberCands(m);
-      ['A', 'B', 'D', 'F', 'G', 'H', 'L', 'M', 'N'].forEach(function (ind) {
-        tryApply('M' + m.no + ' ' + (m.name || '') + ' (' + m.age + ')', ind, cs.filter(function (c) { return c.ind === ind; }).map(function (c) { return { patches: [[m.no, c.patch]] }; }));
-      });
+    return patches;
+  }
+  function replay(issue, current) {
+    const code = issue.code, source = issue.source;
+    if (!source || !issue.key || issue.pendingRun) return null;
+    if (C.totals[code]) return replayHousehold(source, current);
+    const project = (keys, from) => Object.fromEntries(keys.map(k => [k, from[k] == null ? '' : from[k]]));
+    const patches = C.hh[code] ? [['hh', project(C.hh[code], source.hh)]] : [];
+    if (!C.member[code]) return patches;
+    const buckets = new Map();
+    for (const m of source.members.filter(m => isActive(m) || code === 'C')) {
+      const band = C.band(code, m);
+      if (!buckets.has(band)) buckets.set(band, []);
+      buckets.get(band).push(m);
+    }
+    for (const m of current.members.filter(m => isActive(m) || code === 'C')) {
+      const bucket = buckets.get(C.band(code, m));
+      if (!bucket || !bucket.length) return null;
+      const from = bucket.shift();
+      if (!C.eligible(code, m) && code !== 'C' && code !== 'E') continue;
+      const p = project(C.member[code], from);
+      if (code === 'B') {
+        if (!p.occup_s) setEmploymentAnswers(p, m.age);
+        if (Number(p.occup_s) === 999) Object.assign(p, {wagcshm:'', entrep_income:''});
+        else if (Number(p.workind) === 2) Object.assign(p, {entrep_income: m.entrep_income || m.wagcshm || 12000, wagcshm:''});
+        else Object.assign(p, {wagcshm: m.wagcshm || m.entrep_income || 12000, entrep_income:''});
+      }
+      if (code === 'C' && isActive(m) && m.age >= 15) {
+        // Each proposed worker must still have the requested annual wage or profit on the visible path.
+        const wage = Number(p.wagcshm) > 0, profit = Number(p.entrep_income) > 0;
+        if (Number(m.occup_s) === 999 ? wage || profit : Number(m.workind) === 2 ? (!profit || wage) : (!wage || profit)) return null;
+      }
+      if (code === 'N' || code === 'W') {
+        if (Number(p.educind) === 1 && !m.gradel) p.gradel = gradeFor(m.age);
+        if (Number(p.educind) === 2) p.gradel = '';
+        if (code === 'W' && Number(p.childlabor_yes) === 1 && !Number(p.childlabor)) return null;
+        if (code === 'W' && Number(p.childlabor) > 0) { p.work_hrs = m.work_hrs || 2; p.work_tothrs = m.work_tothrs || 4; }
+      }
+      patches.push([m.no, p]);
+    }
+    return [...buckets.values()].some(b => b.length) ? null : patches;
+  }
+
+  function plan(roster, uncovered, thresholds, history) {
+    const want = new Set(uncovered || []);
+    let P = {hh: hhDefaults(), members: roster.map(m => Object.assign({no:m.no, name:m.name, age:Number(m.age), status:m.status || 1}, memberDefaults(m)))};
+    let finalForm = false;
+    // Compare the gains AND losses across every indicator which reads any changed input.
+    function choose(options, force, avoidFullRepeat) {
+      if (!options.length) return;
+      const fields = {hh:new Set(), m:new Set()};
+      options.forEach(patches => patches.forEach(([key,p]) => Object.keys(p).forEach(k => fields[key === 'hh' ? 'hh':'m'].add(k))));
+      if (!finalForm && (fields.m.has('workind') || fields.m.has('jobind'))) fields.m.add('wagcshm');
+      const affected = C.codes.filter(c => (C.hh[c] || []).some(k => fields.hh.has(k)) || (C.member[c] || []).some(k => fields.m.has(k))).concat('LOWB');
+      if (history) for (const code of ['ES','SA','TOTAL']) if (history.stats[code].issues.length) affected.push(code);
+      function evaluate(q) {
+        const actual = finalForm ? q : entries(q), both = E.scoreBoth(actual, {thresholds});
+        const score = affected.reduce((total,c) => total + purpose(c, actual, both, thresholds, history, want), 0);
+        return score - (avoidFullRepeat && history.fullCases.has(C.signature('TOTAL', actual, thresholds)) ? 1 : 0);
+      }
+      let best = P, points = force ? -Infinity : evaluate(P);
+      for (const opt of options) {
+        const q = patchPlan(P, opt), value = evaluate(q);
+        if (value > points + 1e-9) { best = q; points = value; }
+      }
+      P = best;
+    }
+    HH_SLOTS.forEach(slot => {
+      let options = slot.cands();
+      if (slot.ind === 'Y') options = options.flatMap(p => [p, Object.assign({location:2},p)]);
+      choose(options.map(p => [['hh',p]]));
     });
-    // income last (depends on who works and on family size)
-    var inc = planIncome(P, want, cur, thresholds, locks);
-    if (inc) { P = inc.plan; targets.push({ where: 'Income', ind: 'C', patches: inc.patches, scenarios: inc.hits, note: inc.note }); }
-    P.members.filter(isActive).forEach(function (m) { setEmploymentAnswers(m, m.age); });
-    return { household: P, targets: targets };
+    const adults = P.members.filter(m => isActive(m) && m.age >= 15).map(m => m.no);
+    for (const code of ['E','V']) choose(familyCands(adults).filter(c => c.ind === code).map(c => c.patches));
+    for (const code of ['W','A','B','D','F','G','H','L','M','N']) memberSearch(code, P, choose, thresholds);
+    const income = incomeOptions(P, thresholds);
+    choose(income, true);
+    P = entries(P);
+    finalForm = true;
+    if (history) {
+      for (const code of C.codes.concat(Object.keys(C.totals))) {
+        const options = history.stats[code].issues.map(i => replay(i, P)).filter(Boolean);
+        choose(options);
+      }
+      if (history.fullCases.has(C.signature('TOTAL',P,thresholds))) {
+        // Break a whole-interview tie when previously used options can be recombined without losing a target.
+        for (const slot of HH_SLOTS) {
+          choose(slot.cands().map(p => [['hh',p]]), false, true);
+          if (!history.fullCases.has(C.signature('TOTAL',P,thresholds))) break;
+        }
+      }
+    }
+    return describe(P, thresholds, history, want);
+  }
+
+  function describe(P, thresholds, history, want) {
+    const both = E.scoreBoth(P, {thresholds}), rows = [], targets = [];
+    const summaryCodes = ['LOWB'].concat(['ES','SA','TOTAL'].filter(c => history && history.stats[c].issues.length));
+    for (const code of C.codes.concat(summaryCodes)) {
+      const result = both.target.indicators[code], level = result ? result.level : both.target[C.totals[code]];
+      const hits = C.branches(both, code).filter(id => want.has(id));
+      const stat = history && history.stats[code], key = (result || (stat && stat.issues.length)) && C.signature(code, P, thresholds);
+      const mix = result && C.memberMix(result);
+      const edge = C.boundary(code, level, both.target.total, C.branches(both, code));
+      const newBoundary = stat && stat.seen && edge && !stat.boundaries.has(edge) ? edge : '';
+      const newLevel = !!stat && (!!result || code === 'LOWB') && C.applicable(code,P.members) && [1,2,3].includes(level) && !stat.levels.has(level);
+      const issues = stat && key ? stat.issues.filter(i => issueMatch(i, key, level)) : [];
+      const usable = level != null || hits.length > 0;
+      const newCase = !!(stat && result && stat.seen && stat.cases.size && usable && !stat.cases.has(key));
+      const newMix = !!(stat && stat.mixes.size && mix && level != null && !stat.mixes.has(mix));
+      const goals = [];
+      if (newLevel) goals.push(code + '.family.L' + level);
+      if (newBoundary) goals.push(code + '.boundary.' + newBoundary);
+      if (issues.length) goals.push(code + '.retest');
+      if (newMix) goals.push(code + '.member_mix');
+      if (newCase) goals.push(code + '.input_combination');
+      rows.push({code, level, hits, newLevel, newCase, newMix, newBoundary, issues, open: stat ? stat.issues : [], members: result && result.members || [],
+        excluded: C.member[code] ? P.members.filter(m => !C.eligible(code,m)) : []});
+      if (!hits.length && !goals.length) continue;
+      function tag(where, rec, vars, ids) {
+        const patch = {};
+        (vars || []).forEach(v => { if (rec[v] != null) patch[v] = rec[v]; });
+        if (Object.keys(patch).length && ids.length) targets.push({ind:code, patches:[[where,patch]], scenarios:ids});
+      }
+      if (!result) continue;
+      tag('hh', P.hh, C.hh[code], goals.concat(hits));
+      P.members.filter(isActive).forEach(m => {
+        const row = (result.members || []).find(r => r.no === m.no);
+        if (!C.eligible(code,m)) return;
+        let local = hits;
+        if (row && row.br) local = hits.filter(id => id === row.br || row.extra.includes(id) || id.includes('.f.'));
+        if (code === 'W') {
+          const single = E.scoreBoth({hh:P.hh, members:[m]}, {thresholds});
+          const childBranches = C.branches(single, code);
+          local = hits.filter(id => childBranches.includes(id) || id === 'W.case.multiple_children_one_fails');
+        }
+        const ids = goals.concat(local);
+        if (row && row.level != null && ids.length) ids.unshift(code + '.member.L' + row.level);
+        tag(m.no, m, C.member[code], ids);
+      });
+    }
+    return {household:P, targets, rows, repeatedRun: history && history.fullCases.get(C.signature('TOTAL',P,thresholds))};
   }
 
   // The scenario catalog uses legacy job flags. Translate the finished plan to BRVD v0.4 entries.
   function setEmploymentAnswers(m, memberAge) {
     if (memberAge < 5) return;
+    // Ages 5-14 answer only the child labor activity path, not adult PSOC employment questions.
+    if (memberAge < 15) {
+      ['occup_s', 'workind', 'jobind', 'jobind_specify', 'avail', 'willing', 'jstatus', 'worked_last_week']
+        .forEach(function (key) { delete m[key]; });
+      if (Number(m.childlabor) > 0) {
+        if (m.work_hrs == null) m.work_hrs = 2;
+        if (m.work_tothrs == null) m.work_tothrs = 4;
+      } else { delete m.indust; delete m.work_hrs; delete m.work_tothrs; }
+      return;
+    }
     var working = Number(m.workind) === 1 || Number(m.jobind) === 1;
     if (working) {
       m.occup_s = m.entrep_income > 0 ? 9111 : 5220;
       m.worked_last_week = m.workind;
       m.workind = m.entrep_income > 0 ? 2 : 1;
-      delete m.jobind;
+      delete m.jobind; delete m.avail; delete m.willing;
       if (m.workind === 1 && m.wagcshm == null) m.wagcshm = 12000;
-      if (memberAge < 18) {
-        m.work_hrs = m.worked_last_week === 1 ? 2 : 0;
-        m.work_tothrs = m.work_hrs * 2;
-      }
     } else {
-      m.occup_s = 999;
+      m.occup_s = 999; delete m.jstatus; delete m.worked_last_week;
       delete m.workind;
       m.jobind = memberAge < 18 ? 9 : 4;
       if (m.avail == null) m.avail = 2;
       if (m.willing == null) m.willing = 2;
     }
+    if (memberAge <= 17) {
+      if (Number(m.childlabor) > 0) {
+        if (m.work_hrs == null) m.work_hrs = 2;
+        if (m.work_tothrs == null) m.work_tothrs = 4;
+      } else { delete m.indust; delete m.work_hrs; delete m.work_tothrs; }
+    }
   }
 
-  function planIncome(P, want, cur, th, locks) {
+  function incomeOptions(P, th) {
     var food = Number(th && th.food), pov = Number(th && th.poverty);
-    if (!food || !pov) return null;
+    if (!food || !pov) return [];
     var act = P.members.filter(isActive), all = P.members, A = act.length, K = all.length - A;
     var earners = act.filter(function (m) { return m.age >= 15 && (Number(m.workind) === 1 || Number(m.jobind) === 1); });
     var adults = act.filter(function (m) { return m.age >= 15; });
     var kids = act.filter(function (m) { return m.age >= 5 && m.age < 15; });
     var e = earners[0] || adults[0];
-    if (!e) return null;
+    if (!e) {
+      if (!A || ![1,4,5,6].includes(Number(P.hh.tenur))) return [];
+      return [0, food, pov].map(pci => [['hh', {imprnt_period: 2, imprnt: Math.ceil(pci * 12 * A)}]]);
+    }
     var field = earners[0] ? 'wagcshm' : 'other_income';
     var cands = [];
     function amt(pci, fs, up) { var x = pci * 12 * fs; return up ? Math.ceil(x) : Math.floor(x); }
@@ -1202,14 +1635,19 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     c('PCI well above poverty threshold', [[e.no, mk(field, amt(pov * 2, A, true))]]);
     c('PCI exactly at the food threshold', [[e.no, mk(field, amt(food, A, true))]]);
     c('PCI exactly at the poverty threshold', [[e.no, mk(field, amt(pov, A, true))]]);
+    [food,pov].forEach(cut => {
+      const annual = cut * 12 * A;
+      c('Annual income just below the threshold', [[e.no, mk(field, Math.max(0, Math.ceil(annual) - 1))]]);
+      c('Annual income just above the threshold', [[e.no, mk(field, Math.floor(annual) + 1)]]);
+    });
     var grantee = adults.filter(function (m) { return m.no !== e.no; })[0] || e;
     c('4Ps cash present; PCI below poverty only if 4Ps is excluded', [[e.no, mk(field, amt(pov - 300, A, false))], [grantee.no, { pantawidind: 1, pantawidcsh: Math.ceil(600 * 12 * A) }]]);
-    if (kids.length) c('Income of a member under 15 (excluded by target rule)', [[e.no, mk(field, amt(pov - 200, A, false))], [kids[0].no, { workind: 1, jstatus: 2, wagcshm: Math.ceil(400 * 12 * A) }]]);
+    if (kids.length) c('Income of a member under 15 (excluded by target rule)', [[e.no, mk(field, amt(pov - 200, A, false))], [kids[0].no, { other_income: Math.ceil(400 * 12 * A) }]]);
     var ofwC = adults.filter(function (m) { return m.no !== e.no; })[0];
     if (ofwC && A >= 3) c('OFW member: counted in family size (target) vs excluded (Stata)', [[e.no, mk(field, amt(pov, A - 0.5, true))], [ofwC.no, { ofw: 1 }]]);
     if (K > 0) c('Moved-out/deceased member: excluded from family size (target) vs counted (Stata)', [[e.no, mk(field, amt(pov, A + 0.5 * K, true))]]);
     if ([1, 4, 5, 6].indexOf(Number(P.hh.tenur)) >= 0) c('Imputed rent added to income (target) vs ignored (Stata)', [[e.no, mk(field, amt(pov - 500, A, false))], ['hh', { imprnt: 500 * A }]]);
-    var best = null;
+    const options = [];
     cands.forEach(function (cd) {
       // Divide the proposed annual earnings across all workers before scoring the candidate.
       // Keeping the total intact preserves threshold and imputed-rent scenarios.
@@ -1222,14 +1660,9 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
           cd.patches.push([worker.no, mk(i % 2 ? 'entrep_income' : 'wagcshm', amount)]);
         });
       }
-      if (cd.patches.some(function (kp) { return lockedConflict(locks || {}, kp[0], kp[1]); })) return;
-      var Q = clone(P);
-      cd.patches.forEach(function (kp) { if (kp[0] === 'hh') Object.assign(Q.hh, kp[1]); else Object.assign(Q.members.filter(function (x) { return x.no === kp[0]; })[0], kp[1]); });
-      var after = branchesOf(Q, th), g = gain(after, cur, want);
-      if (!best || g.g > best.g.g) best = { cd: cd, Q: Q, g: g };
+      options.push(cd.patches);
     });
-    if (!best) return null;
-    return { plan: best.Q, patches: best.cd.patches, hits: best.g.hits, note: best.cd.note };
+    return options;
     function mk(f, v) { var o = {}; o[f] = v; if (f === 'wagcshm') { o.other_income = 0; } return o; }
   }
 
@@ -1389,6 +1822,10 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
 <script>
 var DEMO = {"live":false,"user":"","testers":["Tester 1","Tester 2"],"runs":[],"scores":[],"config":{"food_threshold":2053,"poverty_threshold":2647,"level_tolerance":0.01,"weighted_tolerance":0.0006}};
 var IND = SWDI.INDICATORS, FIELDS = SWDIFields.FIELDS, LISTS = SWDIFields.LISTS, SC = SWDIScenarios;
+// Keep BRVD activity codes; add an explicit no-activity option for the SWDI App's single-select question.
+LISTS.childlabor = Object.assign({ 0: 'NONE' }, LISTS.childlabor);
+var childActivityField = FIELDS.filter(function (f) { return f.v === 'childlabor'; })[0];
+if (childActivityField) childActivityField.q = 'Has the member been engaged in any of the following work and activities?';
 var TOTALS = [{ code: 'ES', name: 'Raw ES score' }, { code: 'SA', name: 'Raw SA score' }, { code: 'TOTAL', name: 'TOTAL SWDI score' }, { code: 'LOWB', name: 'LOWB (1-3)' }];
 var STATUSES = ['Draft', 'Entering in SWDI App', 'Synced — verify scores', 'Verified in SWDI App', 'Verified in 4Ps Forward', 'Blocked'];
 var STATA_NOTES = { A: 'BRVD Scoring Rules rows 8 and 10: the diploma test uses the recorded gradel code, and the family average includes members aged 18 or older.', C: 'Stata: family size = all captured members − OFW; under-15 income counted; no imputed rent.',
@@ -1402,6 +1839,7 @@ var ALIASES = { A: ['employable skill'], B: ['employment'], C: ['income'], D: ['
   Q: ['tenure'], R: ['lighting'], S: ['ownership of assets', 'assets'], T: ['parenting'], U: ['discern', 'arrive at solutions', 'problem-solving', 'problem solving'], V: ['participation', 'organization'],
   W: ['rights of children', "children's rights", 'children rights'], X: ['gender', 'gbv'], Y: ['disaster', 'drrm'] };
 var S = { data: null, view: 'overview', run: null, tab: 'roster', live: false, showAll: false, dirty: false, who: 'mine', q: '', openOnly: false, cap: null };
+var BUSY_TOKEN = 0;
 
 // ---------- utils ----------
 function $(s, r) { return (r || document).querySelector(s); }
@@ -1411,37 +1849,75 @@ function num(v) { return SWDI.num(v); }
 function fmt(x, d) { if (x === null || x === undefined || x === '') return '—'; var n = Number(x); if (isNaN(n)) return esc(x); d = d === undefined ? 4 : d; return Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(d).replace(/0+$/, '').replace(/\.$/, ''); }
 function lvlTxt(x) { return x === null || x === undefined || x === '' ? 'N/A' : fmt(x, 2); }
 function toast(t, ms) { var e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(e._t); e._t = setTimeout(function () { e.classList.remove('on'); }, ms || 2600); }
+function beginBusy(label) {
+  var token = ++BUSY_TOKEN, layer = $('#busyOverlay');
+  $('#busyMessage').textContent = label;
+  layer.hidden = false;
+  $('#main').setAttribute('aria-busy', 'true');
+  return token;
+}
+function endBusy(token) {
+  if (token !== BUSY_TOKEN) return;
+  $('#busyOverlay').hidden = true;
+  $('#main').removeAttribute('aria-busy');
+}
+function afterPaint(label, work) {
+  var token = beginBusy(label);
+  requestAnimationFrame(function () {
+    setTimeout(function () {
+      try { work(); } catch (e) { toast('Could not complete action: ' + (e.message || e), 9000); }
+      finally { endBusy(token); }
+    }, 20);
+  });
+}
 function vcls(v) { return v === 'PASS' ? 'v-PASS' : v === 'FAIL' ? 'v-FAIL' : v === 'STATA RULE' ? 'v-STATA' : v === 'ROUNDING' ? 'v-ROUNDING' : v === 'N/A CHECK' ? 'v-NA' : v === 'CHECK' ? 'v-CHECK' : ''; }
 function pill(v) { return v ? '<span class="pill ' + vcls(v) + '">' + esc(v) + '</span>' : ''; }
 function store(k, v) { try { localStorage.setItem('swdi-runner-' + k, JSON.stringify(v)); } catch (e) {} }
 function load(k) { try { return JSON.parse(localStorage.getItem('swdi-runner-' + k)); } catch (e) { return null; } }
-function th() { var c = S.data.config, R = S.run; if (R && R.food !== '' && R.food !== undefined && R.pov !== '' && R.pov !== undefined) return { food: num(R.food), poverty: num(R.pov) }; return { food: num(c.food_threshold), poverty: num(c.poverty_threshold) }; }
+function th() {
+  var R = S.run, c = S.data.config;
+  return R ? { food: num(R.food), poverty: num(R.pov) } : { food: num(c.food_threshold), poverty: num(c.poverty_threshold) };
+}
+function updateThresholdChip() {
+  var chip = $('#thChip'), R = S.run;
+  if (!R || S.view !== 'run') { chip.hidden = true; chip.textContent = ''; return; }
+  chip.hidden = false;
+  chip.textContent = 'Active run · Food ' + (num(R.food) === null ? 'not set' : '₱' + fmt(R.food, 2)) +
+    ' · Poverty ' + (num(R.pov) === null ? 'not set' : '₱' + fmt(R.pov, 2));
+  chip.title = 'Threshold values entered for this test run in ① Household & roster (monthly per capita); not global Config values.';
+}
 function tester() { return $('#tester').value; }
 function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function listLabel(list, v) { var L = LISTS[list] || {}; return L[String(v)] || ''; }
 
 // ---------- server bridge ----------
-function call(fn, args, ok) {
+function call(fn, args, ok, fail) {
   if (S.live) {
-    var r = google.script.run.withSuccessHandler(function (x) { ok && ok(x); }).withFailureHandler(function (e) { toast('Error: ' + e.message, 9000); });
+    var r = google.script.run.withSuccessHandler(function (x) { if (ok) ok(x); })
+      .withFailureHandler(function (e) { if (fail) fail(e); else toast('Error: ' + (e.message || e), 9000); });
     r[fn].apply(r, args);
-  } else demoCall(fn, args, ok);
+  } else demoCall(fn, args, ok, fail);
 }
-function demoCall(fn, args, ok) {
+function demoCall(fn, args, ok, fail) {
   var db = load('db') || { runs: [], roster: [], entries: [], scores: [] };
+  if (fn === 'getPlanningHistory') { ok(JSON.stringify(planningRecords_(db.runs, db.scores, db.roster, db.entries, SWDICoverage.variables))); return; }
   if (fn === 'getRun') { var id = args[0], f = function (r) { return r['Run ID'] === id; }; ok(JSON.stringify({ roster: db.roster.filter(f), entries: db.entries.filter(f), scores: db.scores.filter(f) })); return; }
   if (fn === 'saveRun') {
     var p = JSON.parse(args[0]), run = p.run;
     if (!run['Run ID']) { var d = today().replace(/-/g, ''), n = db.runs.filter(function (r) { return String(r['Run ID']).indexOf('RUN-' + d) === 0; }).length + 1; run['Run ID'] = 'RUN-' + d + '-' + ('0' + n).slice(-2); }
     var who = me() || 'unknown', old = db.runs.filter(function (r) { return r['Run ID'] === run['Run ID']; })[0], now = new Date().toISOString().slice(0, 16).replace('T', ' ');
-    if (old && p.baseRevision !== undefined && p.baseRevision !== null && Number(p.baseRevision) !== Number(old.Revision || 0)) { toast('Error: This run was saved by ' + (old['Last saved by'] || 'another tester') + ' after you opened it. Reopen the run to load their changes, then redo yours.', 9000); return; }
+    if (old && p.baseRevision !== undefined && p.baseRevision !== null && Number(p.baseRevision) !== Number(old.Revision || 0)) {
+      var conflict = new Error('This run was saved by ' + (old['Last saved by'] || 'another tester') + ' after you opened it. Reopen the run to load their changes, then redo yours.');
+      if (fail) fail(conflict); else toast('Error: ' + conflict.message, 9000);
+      return;
+    }
     run['Created by'] = old ? (old['Created by'] || who) : who; run['Created at'] = old ? old['Created at'] : now; run['Updated at'] = now; run['Last saved by'] = who; run.Revision = old ? Number(old.Revision || 0) + 1 : 1;
     var id2 = run['Run ID'], stamp = function (rows) { return rows.map(function (r) { r['Run ID'] = id2; r.Key = id2 + '|' + r.Key.split('|').slice(1).join('|'); return r; }); };
     db.runs = db.runs.filter(function (r) { return r['Run ID'] !== id2; }).concat([run]);
     ['roster', 'entries', 'scores'].forEach(function (k) { db[k] = db[k].filter(function (r) { return r['Run ID'] !== id2; }).concat(stamp(p[k] || [])); });
-    store('db', db); S.data.runs = db.runs; S.data.scores = db.scores; ok(JSON.stringify({ id: id2, revision: run.Revision, createdBy: run['Created by'], savedBy: who })); return;
+    store('db', db); S.data.runs = db.runs; S.data.scores = db.scores; S.data.planningRoster = planningRoster_(db.roster); ok(JSON.stringify({ id: id2, revision: run.Revision, createdBy: run['Created by'], savedBy: who })); return;
   }
-  if (fn === 'deleteRun') { var rid = args[0]; ['runs', 'roster', 'entries', 'scores'].forEach(function (k) { db[k] = db[k].filter(function (r) { return r['Run ID'] !== rid; }); }); store('db', db); S.data.runs = db.runs; S.data.scores = db.scores; ok(true); }
+  if (fn === 'deleteRun') { var rid = args[0]; ['runs', 'roster', 'entries', 'scores'].forEach(function (k) { db[k] = db[k].filter(function (r) { return r['Run ID'] !== rid; }); }); store('db', db); S.data.runs = db.runs; S.data.scores = db.scores; S.data.planningRoster = planningRoster_(db.roster); ok(true); }
 }
 
 // ---------- coverage ----------
@@ -1452,6 +1928,7 @@ function finalVerdict(r) {
   if (vs.indexOf('STATA RULE') >= 0) return 'STATA RULE';
   if (vs.indexOf('ROUNDING') >= 0) return 'ROUNDING';
   if (vs.indexOf('N/A CHECK') >= 0) return 'N/A CHECK';
+  if (vs.indexOf('CHECK') >= 0) return 'CHECK';
   return 'PASS';
 }
 function coverage() {
@@ -1553,7 +2030,7 @@ function renderOverview() {
     kpi(runs.filter(function (r) { return r.Status === 'Verified in 4Ps Forward'; }).length + ' / ' + runs.length, 'runs verified in 4Ps Forward') + kpi(exe.length, 'indicator checks executed') +
     kpi('<span style="color:var(--pass)">' + cnt('PASS') + '</span>', 'PASS') + kpi('<span style="color:var(--fail)">' + cnt('FAIL') + '</span>', 'FAIL') +
     kpi('<span style="color:var(--amber)">' + (cnt('STATA RULE') + cnt('ROUNDING')) + '</span>', 'STATA RULE / ROUNDING') +
-    kpi(Math.round(100 * tested / SC.length) + '%', 'scenarios verified (' + tested + '/' + SC.length + '); ' + planned + ' exercised') + '</div>';
+    kpi(Math.round(100 * tested / SC.length) + '%', 'catalog scenarios with an observed check (' + tested + '/' + SC.length + ') · ' + planned + ' exercised') + '</div>';
   if (runs.length) {
     var rs = runs.slice().sort(function (a, b) { return String(a['Run ID']).localeCompare(String(b['Run ID'])); });
     html += '<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3>Indicator × test run</h3><div class="legend">' + pill('PASS') + pill('FAIL') + pill('STATA RULE') + pill('ROUNDING') + pill('N/A CHECK') +
@@ -1567,6 +2044,7 @@ function renderOverview() {
     });
     html += '</table></div></div>';
   }
+  html += familyCoverageTable(runs, R);
   var kinds = {}; SC.forEach(function (s) { kinds[s.kind] = 1; });
   html += '<div class="card"><div class="row" style="justify-content:space-between"><h3>Scenario coverage</h3><div class="row">' +
     '<select id="scInd" class="btn sm"><option value="">All indicators</option>' + IND.map(function (d) { return '<option value="' + d.code + '">' + d.code + ' ' + esc(d.name) + '</option>'; }).join('') + '<option value="LOWB">Overall / LOWB</option></select>' +
@@ -1603,13 +2081,15 @@ function renderCriteria() {
 
 // ---------- run view ----------
 function renderRun() {
+  updateThresholdChip();
   var R = S.run, ex = R.roster.some(function (r) { return r.age !== '' && r.age !== null; });
+  var canEnter = ex && (R.mode !== 'Guided' || R.planned || Object.keys(R.values.hh).length || Object.values(R.values.m).some(m => Object.keys(m).length));
   var tabs = [['roster', '① Household & roster'], ['answers', '② Values to enter'], ['expected', '③ Expected & criteria'], ['verify', '④ Verify scores']];
   $('#main').innerHTML = '<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>' + esc(R.id || 'New test run') + '</h2><div class="muted">' + esc(R.fam ? 'Family ID ' + R.fam + (householdHead(R) ? ' · ' + householdHead(R) : '') : 'Pick the household in the SWDI App, then record its Family ID and roster.') + '</div>' +
     (R.id ? '<div class="small muted">Created by ' + esc(R.createdBy || '—') + (R.savedBy ? ' · last saved by ' + esc(R.savedBy) : '') + ' · ' + progBar(progressOf(R).text) + ' ' + esc(progressOf(R).text) + '</div>' : '') + '</div>' +
     '<div class="row"><span class="pill">' + esc(R.mode) + ' mode</span><select id="rStatus" class="btn sm">' + STATUSES.map(function (s) { return '<option' + (s === R.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select>' +
     '<button class="btn pri sm" id="saveRun">Save run</button>' + (R.id ? '<button class="btn sm danger" id="delRun">Delete</button>' : '') + '</div></div>' +
-    '<div class="tabs">' + tabs.map(function (t) { return '<button class="tab' + (S.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '"' + (!ex && t[0] !== 'roster' ? ' disabled style="opacity:.4"' : '') + '>' + t[1] + '</button>'; }).join('') + '</div>' + (R.importNote ? '<div class="banner info">' + R.importNote + '</div>' : '') + '<div id="tabBody"></div>';
+    '<div class="tabs">' + tabs.map(function (t) { return '<button class="tab' + (S.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '"' + (!canEnter && t[0] !== 'roster' ? ' disabled style="opacity:.4"' : '') + '>' + t[1] + '</button>'; }).join('') + '</div>' + (R.importNote ? '<div class="banner info">' + R.importNote + '</div>' : '') + '<div id="tabBody"></div>';
   $('#rStatus').onchange = function () { R.status = this.value; S.dirty = true; };
   $('#saveRun').onclick = saveRun;
   if ($('#delRun')) $('#delRun').onclick = function () { $('#delRun').outerHTML = '<span class="small">Delete ' + esc(R.id) + '? <button class="btn sm danger" id="delYes">Yes, delete</button></span>'; $('#delYes').onclick = function () { call('deleteRun', [R.id, tester()], function () { toast('Run deleted'); S.dirty = false; store('draft', null); S.run = null; S.view = 'overview'; route(); }); }; };
@@ -1626,7 +2106,7 @@ function tabRoster() {
     '<label class="field">Poverty threshold (monthly per capita, ₱)<input id="rPov" type="number" step="0.01" value="' + esc(R.pov) + '" style="min-width:120px"></label>' +
     '<label class="field">Test instance<select id="rEnv"><option value="">Unspecified</option>' + instanceOptions(R.env) + '</select></label>' +
     '<div class="field">Mode<div class="seg" id="rMode"><button data-m="Guided" class="' + (R.mode === 'Guided' ? 'on' : '') + '">Guided</button><button data-m="Record" class="' + (R.mode === 'Record' ? 'on' : '') + '">Record</button></div></div></div>' +
-    '<p class="small muted" style="margin:10px 0 0">Use the SWDI IS food and poverty thresholds for this household\'s province (urban/rural) and income reference period. ' + (R.mode === 'Guided' ? '<b>Guided:</b> after the roster, the web app proposes the values to enter for each member and the household, aimed at scenarios not yet covered by any run (ages decide which scenarios fit).' :
+    '<p class="small muted" style="margin:10px 0 0">Use the SWDI IS food and poverty thresholds for this household\'s province (urban/rural) and income reference period. ' + (R.mode === 'Guided' ? '<b>Guided:</b> after the roster, the web app proposes the values to enter for each member and the household, with a preview of new family levels, member combinations and open checks for this roster.' :
       '<b>Record:</b> enter whatever you put in the SWDI App. The engine grades it and coverage is credited automatically.') + '</p></div>' +
     '<div class="card"><h3>Household roster — exactly as listed in the SWDI App</h3><p class="small muted">Age as computed by the app. Age drives every coverage filter (0-5, 0-17, 0-18, 3-18, 5-9, 10-64, 15+).</p>' +
     '<table class="roster"><tr><th>#</th><th style="width:30%">Name</th><th style="width:80px">Age</th><th>Sex</th><th>Relationship</th><th>Status</th><th></th></tr>' + R.roster.map(function (m, i) {
@@ -1634,15 +2114,16 @@ function tabRoster() {
         '<td><select data-k="sex">' + opt('sex', m.sex) + '</select></td><td><select data-k="reln">' + opt('reln', m.reln) + '</select></td><td><select data-k="status">' + opt('memberstatus', m.status) + '</select></td>' +
         '<td><button class="btn sm" data-del="' + i + '">✕</button></td></tr>';
     }).join('') + '</table><div class="row" style="margin-top:8px"><button class="btn sm" id="addM">+ Add member</button><span class="small muted" id="ageSummary"></span></div></div>' +
-    '<div class="sticky"><button class="btn pri" id="goPlan">' + (R.mode === 'Guided' ? (R.planned ? 'Re-plan values →' : 'Plan values to enter →') : 'Continue to values →') + '</button>' +
+    '<div class="sticky"><button class="btn pri" id="goPlan">' + (R.mode === 'Guided' ? (R.id ? 'Preview next interview →' : 'Preview guided plan →') : 'Continue to values →') + '</button>' +
+    (R.id && R.mode === 'Guided' && !hasObservations(R) ? '<button class="btn" id="revisePlan">Preview changes to this run</button>' : '') +
     (R.mode === 'Record' ? '<button class="btn" id="prefill">Prefill with typical values</button>' : '') + '<span class="small muted" id="planMsg"></span></div>';
   var upd = function () { var a = R.roster.map(function (m) { return m.age; }).filter(function (x) { return x !== ''; }); $('#ageSummary').textContent = a.length ? 'Ages: ' + a.join(', ') : ''; };
   upd();
   $('#rFam').oninput = function () { R.fam = this.value.trim(); S.dirty = true; };
   $('#rDate').oninput = function () { R.date = this.value; };
   $('#rEnv').onchange = function () { R.env = this.value; S.dirty = true; };
-  $('#rFood').oninput = function () { R.food = this.value === '' ? '' : Number(this.value); S.dirty = true; };
-  $('#rPov').oninput = function () { R.pov = this.value === '' ? '' : Number(this.value); S.dirty = true; };
+  $('#rFood').oninput = function () { R.food = this.value === '' ? '' : Number(this.value); S.dirty = true; updateThresholdChip(); };
+  $('#rPov').oninput = function () { R.pov = this.value === '' ? '' : Number(this.value); S.dirty = true; updateThresholdChip(); };
   $$('#rMode button').forEach(function (b) { b.onclick = function () { R.mode = b.dataset.m; S.dirty = true; renderRun(); }; });
   $('#tabBody').addEventListener('input', function (e) {
     var tr = e.target.closest('tr[data-i]'); if (!tr || !e.target.dataset.k) return;
@@ -1653,26 +2134,140 @@ function tabRoster() {
   });
   $('#addM').onclick = function () { R.roster.push({ no: R.roster.length + 1, name: '', age: '', sex: 1, reln: 3, status: 1 }); renderRun(); };
   if ($('#prefill')) $('#prefill').onclick = function () { prefillDefaults(); toast('Typical values filled — change them to what you enter'); S.tab = 'answers'; renderRun(); };
-  $('#goPlan').onclick = function () {
-    var bad = R.roster.filter(function (m) { return m.age === '' || m.name === ''; });
-    if (bad.length) { $('#planMsg').textContent = 'Enter the name and age of every member first.'; return; }
-    if (R.mode === 'Guided') { planRun(); } else if (!Object.keys(R.values.hh).length) prefillBlank();
+  function proceed(revise) {
+    if (R.roster.some(m => !m.name.trim() || m.age === '' || m.age == null || !Number.isInteger(Number(m.age)) || m.age < 0 || m.age > 120)) {
+      $('#planMsg').textContent = 'Enter a name and a whole-number age from 0 to 120 for every member.'; return;
+    }
+    if (R.mode === 'Guided') {
+      if (!R.roster.some(m => Number(m.status) === 1)) { $('#planMsg').textContent = 'At least one active member is needed to plan an interview.'; return; }
+      previewPlan(R, !revise && (!!R.id || hasObservations(R))); return;
+    }
+    if (!Object.keys(R.values.hh).length) prefillBlank();
     S.tab = 'answers'; renderRun();
-  };
+  }
+  $('#goPlan').onclick = function () { proceed(false); };
+  if ($('#revisePlan')) $('#revisePlan').onclick = function () { proceed(true); };
 }
 function renumber() { S.run.roster.forEach(function (m, i) { m.no = i + 1; }); }
-function uncovered() {
-  var cov = coverage(), cur = S.run.id;
-  return SC.filter(function (s) { var c = cov[s.id]; return !c || (Object.keys(c.runs).length === 1 && c.runs[cur]); }).map(function (s) { return s.id; });
+function hasObservations(R) {
+  return [R.obs.swdi, R.obs.fpf].some(col => Object.values(col).some(v => v != null && v !== ''));
 }
-function planRun() {
-  var R = S.run, ros = R.roster.map(function (m) { return { no: m.no, name: m.name, age: Number(m.age), status: Number(m.status) || 1 }; });
-  var p = SWDIPlanner.plan(ros, uncovered(), th());
-  R.values = { hh: p.household.hh, m: {} }; R.suggested = { hh: JSON.parse(JSON.stringify(p.household.hh)), m: {} }; R.targets = {};
-  p.household.members.forEach(function (m) { var o = Object.assign({}, m); ['no', 'name', 'age', 'status'].forEach(function (k) { delete o[k]; }); R.values.m[m.no] = o; R.suggested.m[m.no] = JSON.parse(JSON.stringify(o)); });
-  p.targets.forEach(function (t) { t.patches.forEach(function (kp) { Object.keys(kp[1]).forEach(function (v) { var key = (kp[0] === 'hh' ? 0 : kp[0]) + '|' + v; R.targets[key] = (R.targets[key] || []).concat(t.scenarios); }); }); });
-  R.planned = true; R.planSummary = p.targets.reduce(function (n, t) { return n + t.scenarios.length; }, 0); S.dirty = true;
-  toast('Planned: ' + R.planSummary + ' new scenario hits for this household');
+var scenarioById = Object.fromEntries(SC.map(s => [s.id, s]));
+function readTargetIds(text) {
+  return String(text || '').split(/\||\s+(?=[A-Z]+\.)/).filter(Boolean);
+}
+function targetLabel(id) {
+  if (scenarioById[id]) return scenarioById[id].desc;
+  const [code, kind, level] = id.split('.');
+  if (kind === 'family') return code + ' · new family ' + level;
+  if (kind === 'member') return code + ' · member ' + level;
+  if (kind === 'boundary') return code + ' · ' + id.split('.').slice(2).join('.');
+  if (kind === 'member_mix') return code + ' · new member-level combination';
+  if (kind === 'input_combination') return code + ' · new response combination';
+  if (kind === 'retest') return code + ' · repeat prior discrepancy';
+  return id;
+}
+function targetCount(R) { return new Set(Object.values(R.targets).flat()).size; }
+function familyCoverageTable(runs, scores) {
+  const history = SWDICoverage.history(planningRecords_(runs, scores, S.data.planningRoster || [], [], []));
+  const rows = IND.concat([{code:'LOWB',name:'Overall LOWB'}]).map(d => {
+    const levels = history.stats[d.code].levels;
+    return '<tr><td>' + d.code + ' · ' + esc(d.name) + '</td>' + [1,2,3].map(n => {
+      const c = levels.get(n);
+      const label = !c ? 'Missing' : c.passed ? 'PASS' : c.checked ? 'Checked · discrepancy' : 'Entered only';
+      return '<td>' + (c && c.passed ? pill('PASS') : esc(label)) + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  return '<details class="card"><summary>Family outcome coverage · L1, L2 and L3</summary>' +
+    '<p class="small muted">Each column uses the exact expected family score for eligible rosters. A pass requires a matching observation on at least one platform. Fractional averages appear in the run table.</p>' +
+    '<table><tr><th>Indicator</th><th>Family L1</th><th>Family L2</th><th>Family L3</th></tr>' + rows + '</table></details>';
+}
+function previewPlan(R, copy) {
+  const body = $('#tabBody'), token = beginBusy('Reading saved coverage and planning this roster…');
+  const thresholds = th();
+  const failed = e => { endBusy(token); toast('Could not prepare the coverage preview: ' + (e.message || e), 9000); };
+  call('getPlanningHistory', [], function (json) {
+    // Let the progress indicator paint before the synchronous candidate search.
+    setTimeout(function () {
+      try {
+        if (S.run !== R || $('#tabBody') !== body) return;
+        const history = SWDICoverage.history(JSON.parse(json), R.env, copy ? null : R.id);
+        const missing = SC.filter(s => !history.seen.has(s.id));
+        const p = SWDIPlanner.plan(R.roster, missing.map(s => s.id), thresholds, history);
+        const reached = new Set(p.rows.flatMap(r => r.hits));
+        const blocked = missing.filter(s => !reached.has(s.id)).map(s => [s, SWDICoverage.rosterNeed(s, R.roster)]).filter(([,need]) => need);
+        showPlanPreview(R, p, history, blocked, copy);
+      } catch (e) { failed(e); }
+      finally { endBusy(token); }
+    }, 20);
+  }, failed);
+}
+function showPlanPreview(R, p, history, blocked, copy) {
+  const newLevels = p.rows.filter(r => r.newLevel && r.code !== 'LOWB'), hits = p.rows.flatMap(r => r.hits);
+  const retests = p.rows.flatMap(r => r.issues), remaining = p.rows.flatMap(r => r.open.filter(i => !r.issues.includes(i)));
+  const noTarget = p.rows.filter(r => !r.hits.length && !r.newLevel && !r.newMix && !r.newCase && !r.newBoundary && !r.issues.length);
+  const pending = SC.filter(s => history.seen.has(s.id) && !history.checked.has(s.id)).length;
+  const name = id => IND.concat(TOTALS).find(d => d.code === id).name;
+  function issueText(i) { return i.verdict + ' · ' + i.platform + ' · ' + i.run; }
+  const body = p.rows.map(r => {
+    const prev = history.stats[r.code].levels.get(r.level == null ? null : Math.round(r.level * 100000) / 100000);
+    const reasons = [];
+    if (r.newLevel) reasons.push('New family L' + r.level);
+    if (r.hits.length) reasons.push(r.hits.length + ' new catalog ' + (r.hits.length === 1 ? 'scenario' : 'scenarios'));
+    if (r.newBoundary) reasons.push(r.newBoundary);
+    if (r.newMix) reasons.push('New member-level combination');
+    if (r.newCase && !r.newMix) reasons.push('New scoring inputs');
+    if (!reasons.length && !r.issues.length) reasons.push('No new target');
+    if (prev && !prev.checked) reasons.push('Prior family score awaits observation');
+    const details = r.hits.length ? '<details><summary>Scenarios</summary>' + r.hits.map(id => '<div>' + esc(targetLabel(id)) + '</div>').join('') + '</details>' : '';
+    const excluded = r.excluded.length ? '<div class="small muted">Outside coverage · ' +
+      r.excluded.map(m => esc('M' + m.no + ' ' + m.name + ' (' + m.age + ')' + (Number(m.status) !== 1 ? ' · inactive' : ''))).join(', ') + '</div>' : '';
+    const members = r.members.length ? '<details><summary>Member responses</summary>' + memberTable({members:r.members}, r.code) + '</details>' : '';
+    return '<tr><td><b>' + r.code + '</b> ' + esc(name(r.code)) + '</td><td>' + lvlTxt(r.level) + '</td><td>' +
+      reasons.map(esc).join(' · ') + r.issues.map(i => '<div><b>Retest</b> ' + esc(issueText(i)) + '</div>').join('') + details + members + excluded + '</td></tr>';
+  }).join('');
+  const groups = new Map();
+  blocked.forEach(([s,need]) => { if (!groups.has(need)) groups.set(need, []); groups.get(need).push(s); });
+  const gaps = Array.from(groups, ([need,sc]) => '<details><summary>' + esc(need) + ' (' + sc.length + ')</summary>' +
+    sc.map(s => '<div>' + esc(s.id + ' · ' + s.desc) + '</div>').join('') + '</details>').join('');
+  const retestList = remaining.map(i => '<div>' + esc(i.code + ' · ' + issueText(i) + (i.pendingRun ? ' · matching entries await a check in ' + i.pendingRun : !i.key ? ' · original inputs unavailable' : '')) + '</div>').join('');
+  $('#tabBody').innerHTML = '<div class="card"><h3>Guided coverage preview</h3><p>Compared with ' + history.runs + ' saved run(s) across both test instances. ' +
+    'Retests use the same scoring inputs, expected result and test instance (' + esc(instanceName(R.env) || 'Unspecified') + ').</p>' +
+    '<div class="row"><b>' + newLevels.length + ' new family levels</b><span>· ' + hits.length + ' new catalog scenarios</span><span>· ' +
+    retests.length + ' platform checks to retest</span></div>' +
+    (noTarget.length ? '<p class="small muted">No new target in this interview · ' + noTarget.map(r => esc(r.code)).join(', ') + '</p>' : '') +
+    (p.repeatedRun ? '<p class="small">All scoring inputs match run ' + esc(p.repeatedRun) + '.</p>' : '') +
+    (pending ? '<p class="small muted">' + pending + ' previously exercised catalog scenarios still await an observed check. Their existing runs can be verified.</p>' : '') +
+    '<table><thead><tr><th>Indicator</th><th>Expected</th><th>Interview target</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+    (gaps ? '<details class="card"><summary>Unexercised scenarios requiring a different roster (' + blocked.length + ')</summary>' + gaps + '</details>' : '') +
+    (remaining.length ? '<details class="card"><summary>Open checks outside this plan (' + remaining.length + ')</summary>' + retestList + '</details>' : '') +
+    '<div class="sticky"><button class="btn pri" id="acceptPlan">' + (copy ? 'Use in a new run' : R.planned ? 'Replace suggested and entered values' : 'Use these values') +
+    '</button><button class="btn" id="backRoster">Back to roster</button></div>';
+  $('#backRoster').onclick = renderRun;
+  $('#acceptPlan').onclick = function () {
+    if (copy) {
+      const next = newRun();
+      Object.assign(next, {fam:R.fam, env:R.env, food:R.food, pov:R.pov, roster:R.roster.map(m => Object.assign({},m))});
+      S.run = next;
+    }
+    applyPlan(S.run, p);
+    S.tab = 'answers'; renderRun(); renderNav(); window.scrollTo(0,0);
+  };
+  window.scrollTo(0,0);
+}
+function applyPlan(R, p) {
+  R.values = {hh: p.household.hh, m: {}};
+  p.household.members.forEach(m => {
+    const values = Object.assign({}, m);
+    ['no','name','age','status'].forEach(k => delete values[k]);
+    R.values.m[m.no] = values;
+  });
+  R.suggested = JSON.parse(JSON.stringify(R.values)); R.targets = {};
+  p.targets.forEach(t => t.patches.forEach(([who, patch]) => Object.keys(patch).forEach(v => {
+    const key = (who === 'hh' ? 0 : who) + '|' + v;
+    R.targets[key] = Array.from(new Set((R.targets[key] || []).concat(t.scenarios)));
+  })));
+  R.planned = true; S.dirty = true;
 }
 function prefillDefaults() {
   var R = S.run; R.values = { hh: SWDIPlanner.hhDefaults(), m: {} };
@@ -1687,14 +2282,23 @@ function prefillBlank() { var R = S.run; R.values = { hh: {}, m: {} }; R.roster.
 // ---------- answers ----------
 function visible(f, rec, age) {
   if (f.v === 'status') return false;
+  // Employment follows the SWDI mobile age/skip logic, including when "Show all" is enabled.
+  if (f.sec === 'Employment') {
+    if (f.v === 'childlabor_yes') return false; // legacy storage field; activity selection is now the only question
+    if (['childlabor', 'indust', 'work_hrs', 'work_tothrs'].indexOf(f.v) >= 0) {
+      if (age < 5 || age > 17) return false;
+      if (f.v === 'childlabor') return true;
+      return num(rec.childlabor) !== null && num(rec.childlabor) > 0;
+    }
+    if (age < 15) return false;
+  }
   if (f.s === 'm' && f.age && !S.showAll && (age < f.age[0] || age > f.age[1])) return false;
   var specified = rec.occup_s != null && rec.occup_s !== '';
   var working = specified && Number(rec.occup_s) !== 999;
   if (f.when === 'has_occupation') return working || (!specified && f.v === 'jstatus' && rec.jstatus != null);
-  if (f.when === 'no_occupation') return Number(rec.occup_s) === 999 || (!specified && f.v !== 'jobind' && Number(rec.workind) === 2 && Number(rec.jobind) !== 1);
-  if (f.when === 'specify_reason') return Number(rec.occup_s) === 999 && [10, 99].includes(Number(rec.jobind));
-  if (f.when === 'childlabor_yes') return Number(rec.childlabor_yes) === 1 || Number(rec.childlabor) > 0;
-  if (f.when === 'minor_schedule') return working || Number(rec.childlabor_yes) === 1 || Number(rec.childlabor) > 0;
+  if (f.when === 'no_occupation') return specified && Number(rec.occup_s) === 999;
+  if (f.when === 'specify_reason') return specified && Number(rec.occup_s) === 999 && [10, 99].includes(Number(rec.jobind));
+  if (f.when === 'childlabor_yes' || f.when === 'minor_schedule') return num(rec.childlabor) !== null && num(rec.childlabor) > 0;
   if (f.when === 'for_pay' || f.when === 'for_profit') {
     if (!specified) return rec[f.v] != null || rec.workind != null;
     return working && Number(rec.workind) === (f.when === 'for_pay' ? 1 : 2);
@@ -1736,10 +2340,14 @@ function fieldHTML(f, rec, sug, scope, no, age) {
   f = entryField(f, rec);
   if (!visible(f, rec, age)) return '';
   var key = (scope === 'hh' ? 0 : no) + '|' + f.v, val = rec[f.v], s = sug ? sug[f.v] : undefined;
-  var hasS = S.run.mode === 'Guided' && s !== undefined && s !== '', changed = hasS && String(s) !== String(val === undefined ? '' : val);
+  if (f.v === 'childlabor' && (val === '' || val === undefined || val === null) && Number(rec.childlabor_yes) === 2) val = 0;
   var tg = S.run.targets[key];
+  var hasS = S.run.mode === 'Guided' && s !== undefined && (s !== '' || tg && tg.length);
+  var changed = hasS && String(s) !== String(val == null ? '' : val);
   return '<div class="f' + (changed ? ' chg' : tg ? ' sug' : '') + '"><div class="q">' + esc(f.q) + ' <span class="v">' + f.v + '</span></div>' + ctrl(f, val === undefined || val === '' ? f.defaultValue : val, key) +
-    (tg ? '<div class="tg">targets: ' + tg.filter(function (x, i, a) { return a.indexOf(x) === i && !/^Z\.|\.f\./.test(x); }).slice(0, 4).map(function (x) { var d = SC.filter(function (s) { return s.id === x; })[0]; return '<span class="tchip" title="' + esc(x) + '">' + esc(d ? d.desc : x) + '</span>'; }).join('') + '</div>' : '') +
+    (tg && tg.length ? '<div class="tg" title="' + esc(tg.map(targetLabel).join(' · ')) + '">Plan · ' + (s === '' ? '<b>Leave blank</b> · ' : '') +
+      tg.slice(0, 3).map(id => '<span class="tchip">' + esc(targetLabel(id)) + '</span>').join('') +
+      (tg.length > 3 ? '<details><summary>+' + (tg.length - 3) + ' more</summary>' + esc(tg.slice(3).map(targetLabel).join(' · ')) + '</details>' : '') + '</div>' : '') +
     (changed ? '<div class="chgnote">changed from suggested: ' + esc(displayVal(f, s)) + '</div>' : '') + '</div>';
 }
 function displayVal(f, v) {
@@ -1761,10 +2369,10 @@ function sectionsHTML(scope, rec, sug, no, age) {
 function tabAnswers() {
   var R = S.run;
   var exp = expectedFor(R), hits = exp.target.branches.length;
-  var html = '<div class="banner info">' + (R.mode === 'Guided' ? 'Enter these values in the SWDI App. <b>Blue</b> fields were chosen to hit uncovered scenarios (shown as chips). If the app forces something else, change the field to what you actually entered — it turns <b>amber</b> and the expected scores follow.' :
+  var html = '<div class="banner info">' + (R.mode === 'Guided' ? 'Enter these values in the SWDI App. <b>Blue</b> fields support the interview targets shown below. If the app forces something else, change the field to what you actually entered — it turns <b>amber</b> and the expected scores follow.' :
     'Record what you entered in the SWDI App. Only questions that apply to each member\'s age are shown (toggle below to show all).') + '</div>' +
     '<div class="row" style="margin-bottom:10px"><label class="small"><input type="checkbox" id="showAll"' + (S.showAll ? ' checked' : '') + '> Show questions outside the member\'s age filter</label>' +
-    (R.mode === 'Guided' ? '<span class="small muted">Plan targets ' + (R.planSummary || 0) + ' scenario hits.</span>' : '') + '</div>' +
+    (R.mode === 'Guided' ? '<span class="small muted">' + targetCount(R) + ' distinct targets on suggested answers.</span>' : '') + '</div>' +
     '<h3>Household</h3>' + sectionsHTML('hh', R.values.hh, R.suggested.hh, 0, 0) + '<h3 style="margin-top:18px">Members</h3>';
   R.roster.forEach(function (m) {
     var rec = R.values.m[m.no] = R.values.m[m.no] || {}, sug = R.suggested.m[m.no] || {}, act = Number(m.status) === 1;
@@ -1790,7 +2398,7 @@ function tabAnswers() {
     } else if (e.target.type === 'checkbox') rec[v] = e.target.checked ? 1 : 2;
     else rec[v] = e.target.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value);
     if (v === 'occup_s' && (!previous || Number(previous) === 999 || !rec[v] || rec[v] === 999)) {
-      ['jobind', 'jobind_specify', 'avail', 'willing', 'workind', 'worked_last_week', 'work_hrs', 'work_tothrs', 'jstatus'].forEach(function (k) { delete rec[k]; });
+      ['jobind', 'jobind_specify', 'avail', 'willing', 'workind', 'worked_last_week', 'jstatus'].forEach(function (k) { delete rec[k]; });
       if (!rec[v] || rec[v] === 999) { delete rec.wagcshm; delete rec.entrep_income; }
       else if (R.mode === 'Guided') {
         rec.workind = rec.entrep_income > 0 ? 2 : 1;
@@ -1805,7 +2413,14 @@ function tabAnswers() {
       else if (R.mode === 'Guided' && rec.entrep_income == null) rec.entrep_income = 12000;
     }
     if (v === 'orgmem' && rec[v] !== 1) { delete rec.orgact1; delete rec.orgofficer1; }
-    if (v === 'childlabor_yes' && rec[v] !== 1) { delete rec.childlabor; delete rec.indust; }
+    if (v === 'childlabor') {
+      // Maintain the legacy boolean for already-scored runs while the single-select activity is authoritative.
+      if (rec.childlabor === '') delete rec.childlabor_yes;
+      else rec.childlabor_yes = Number(rec.childlabor) > 0 ? 1 : 2;
+      if (Number(rec.childlabor) === 0 || rec.childlabor === '') {
+        delete rec.indust; delete rec.work_hrs; delete rec.work_tothrs;
+      }
+    }
     if (v === 'jobind' && ![10, 99].includes(rec[v])) delete rec.jobind_specify;
     S.dirty = true;
     var y = window.scrollY; renderRun(); window.scrollTo(0, y);
@@ -1960,7 +2575,7 @@ function tabVerify() {
   $('#saveVer').onclick = function () {
     var hasF = Object.keys(O.fpf).some(function (k) { return O.fpf[k] !== ''; }), hasS = Object.keys(O.swdi).some(function (k) { return O.swdi[k] !== ''; });
     if (hasF) R.status = 'Verified in 4Ps Forward'; else if (hasS && STATUSES.indexOf(R.status) < 3) R.status = 'Verified in SWDI App';
-    saveRun();
+    saveRun('results');
   };
 }
 function parseScreen(txt) {
@@ -1998,9 +2613,9 @@ function buildPayload() {
     FIELDS.filter(function (f) { return f.s === scope && f.v !== 'status'; }).forEach(function (f) {
       f = entryField(f, rec);
       var v = rec[f.v], sv = sug ? sug[f.v] : undefined, key = no + '|' + f.v;
-      if ((v === undefined || v === '') && (sv === undefined || sv === '')) return;
+      if ((v === undefined || v === '') && (sv === undefined || sv === '') && !(R.targets[key] || []).length) return;
       entries.push({ Key: 'x|' + no + '|' + f.v, 'Member #': no, Member: mname, Section: f.sec, Variable: f.v, Question: f.q, Value: v === undefined ? '' : v, Meaning: displayVal(f, v),
-        'Suggested value': R.mode === 'Guided' && sv !== undefined ? sv : '', 'Target scenarios': (R.targets[key] || []).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(' '),
+        'Suggested value': R.mode === 'Guided' && sv !== undefined ? sv : '', 'Target scenarios': (R.targets[key] || []).join('|'),
         'Changed from suggestion': R.mode === 'Guided' && sv !== undefined && String(sv) !== String(v === undefined ? '' : v) });
     });
   }
@@ -2028,22 +2643,43 @@ function buildPayload() {
     'Household head': householdHead(R), Environment: instanceName(R.env), '4Ps Forward link': R.fpfUrl || '', Progress: progressOf(R).text };
   return { run: run, roster: roster, entries: entries, scores: scores, baseRevision: R.id ? R.rev : null };
 }
-function saveRun() {
+function saveRun(action) {
   var R = S.run;
   if (!R.fam) { toast('Enter the Family ID first (tab ①)'); S.tab = 'roster'; renderRun(); return; }
   if (R.status === 'Draft') R.status = 'Entering in SWDI App';
-  var p = buildPayload();
+  var p;
+  try { p = buildPayload(); } catch (e) { toast('Could not prepare save: ' + (e.message || e), 9000); return; }
+  var token = beginBusy(action === 'results' ? 'Saving results…' : 'Saving test run…');
+  function failure(e) { endBusy(token); toast('Save failed: ' + (e.message || e), 9000); }
   call('saveRun', [JSON.stringify(p), tester()], function (x) {
-    var res = String(x).charAt(0) === '{' ? JSON.parse(x) : { id: x };
-    R.id = res.id; R.rev = res.revision === undefined ? R.rev : res.revision; R.createdBy = res.createdBy || R.createdBy || me(); R.savedBy = res.savedBy || me();
-    S.dirty = false; store('draft', null); toast('Saved ' + R.id + ' — you can come back to it any time from the run list');
-    if (S.live) { google.script.run.withSuccessHandler(function (j) { var d = JSON.parse(j); S.data.runs = d.runs; S.data.scores = d.scores; renderNav(); renderRun(); }).getBootstrap(); }
-    else { renderNav(); renderRun(); }
-  });
+    try {
+      var res = String(x).charAt(0) === '{' ? JSON.parse(x) : { id: x };
+      R.id = res.id; R.rev = res.revision === undefined ? R.rev : res.revision;
+      R.createdBy = res.createdBy || R.createdBy || me(); R.savedBy = res.savedBy || me();
+      S.dirty = false; store('draft', null);
+      toast('Saved ' + R.id + ' — you can come back to it any time from the run list');
+      if (S.live) {
+        $('#busyMessage').textContent = 'Refreshing saved run…';
+        google.script.run.withSuccessHandler(function (j) {
+          try {
+            var d = JSON.parse(j);
+            S.data.runs = d.runs; S.data.scores = d.scores; S.data.planningRoster = d.planningRoster;
+            renderNav(); renderRun();
+          } catch (e) { toast('Run saved, but the list could not refresh: ' + (e.message || e), 9000); }
+          finally { endBusy(token); }
+        }).withFailureHandler(function (e) {
+          endBusy(token);
+          toast('Run saved, but refreshing the run list failed: ' + (e.message || e), 9000);
+        }).getBootstrap();
+      } else { renderNav(); renderRun(); endBusy(token); }
+    } catch (e) { failure(e); }
+  }, failure);
 }
 function openRun(id, tab, then) {
   var meta = (S.data.runs || []).filter(function (r) { return r['Run ID'] === id; })[0]; if (!meta) return;
+  var token = beginBusy('Loading test record ' + id + '…');
   call('getRun', [id], function (j) {
+    try {
     var d = JSON.parse(j), R = newRun();
     R.id = id; R.rev = meta.Revision === '' || meta.Revision === undefined ? null : Number(meta.Revision); R.createdBy = ownerOf(meta); R.savedBy = meta['Last saved by'] || ''; R.env = instanceName(meta.Environment); R.fpfUrl = meta['4Ps Forward link'] || '';
     R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
@@ -2053,8 +2689,8 @@ function openRun(id, tab, then) {
     R.roster.forEach(function (m) { R.values.m[m.no] = {}; R.suggested.m[m.no] = {}; });
     d.entries.forEach(function (e) {
       var no = Number(e['Member #']), tgt = no === 0 ? R.values.hh : (R.values.m[no] = R.values.m[no] || {}), sg = no === 0 ? R.suggested.hh : (R.suggested.m[no] = R.suggested.m[no] || {});
-      tgt[e.Variable] = e.Value; if (e['Suggested value'] !== '' && e['Suggested value'] !== undefined) sg[e.Variable] = e['Suggested value'];
-      if (e['Target scenarios']) R.targets[no + '|' + e.Variable] = String(e['Target scenarios']).split(' ');
+      tgt[e.Variable] = e.Value; if (e['Suggested value'] !== undefined && (e['Suggested value'] !== '' || R.mode === 'Guided' && e['Target scenarios'])) sg[e.Variable] = e['Suggested value'];
+      if (e['Target scenarios']) R.targets[no + '|' + e.Variable] = readTargetIds(e['Target scenarios']);
     });
     R.planned = R.mode === 'Guided';
     d.scores.forEach(function (sc) {
@@ -2062,7 +2698,9 @@ function openRun(id, tab, then) {
       if (sc['4Ps Forward observed (level)'] !== '' && sc['4Ps Forward observed (level)'] !== undefined) R.obs.fpf[sc.Code] = sc['4Ps Forward observed (level)'];
     });
     S.run = R; S.view = 'run'; S.tab = tab || resumeTab(meta); S.dirty = false; if (then) then(R); route();
-  });
+    } catch (e) { toast('Could not open test record: ' + (e.message || e), 9000); }
+    finally { endBusy(token); }
+  }, function (e) { endBusy(token); toast('Could not load test record: ' + (e.message || e), 9000); });
 }
 
 // ---------- import from 4Ps Forward ----------
@@ -2277,6 +2915,7 @@ function reportHTML(R) {
 function route() {
   renderNav();
   if (S.view === 'overview') renderOverview(); else if (S.view === 'criteria') renderCriteria(); else if (S.view === 'reports') renderReports(); else if (S.view === 'import') renderImport(); else renderRun();
+  updateThresholdChip();
   var dr = load('draft');
   if (S.view === 'overview' && dr && dr.run && !(S.run && S.dirty)) {
     $('#main').insertAdjacentHTML('afterbegin', '<div class="banner warn row" style="justify-content:space-between"><span>Unsaved changes for <b>' + esc(dr.run.fam || 'a new run') + '</b>' + (dr.run.id ? ' (' + esc(dr.run.id) + ')' : '') + ' from ' + esc(new Date(dr.at).toLocaleString()) + ' were kept in this browser.</span><span><button class="btn sm pri" id="drRestore">Restore</button> <button class="btn sm" id="drDrop">Discard</button></span></div>');
@@ -2288,19 +2927,12 @@ function route() {
 function boot(json) {
   var d = typeof json === 'string' ? JSON.parse(json) : json;
   S.data = d; S.live = !!d.live;
-  if (!S.live) { var db = load('db'); if (db) { d.runs = db.runs; d.scores = db.scores; } var cf = load('config'); if (cf) Object.assign(d.config, cf); }
+  if (!S.live) { var db = load('db'); if (db) { d.runs = db.runs; d.scores = db.scores; d.planningRoster = planningRoster_(db.roster); } var cf = load('config'); if (cf) Object.assign(d.config, cf); }
   $('#modeChip').textContent = S.live ? 'Live · Google Sheet' : 'Preview · data stays in this browser';
   var names = (d.testers || []).slice(); if (d.user && names.indexOf(d.user) < 0) names.unshift(d.user);
   $('#testerList').innerHTML = names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
   $('#tester').value = load('tester') || d.user || '';
   $('#tester').onchange = function () { store('tester', $('#tester').value); };
-  var c = d.config;
-  function thChip() {
-    if (S.live) { $('#thChip').textContent = 'Food ₱' + c.food_threshold + ' · Poverty ₱' + c.poverty_threshold; return; }
-    $('#thChip').innerHTML = 'Food ₱<input id="thF" type="number" value="' + esc(c.food_threshold) + '" style="width:70px;padding:1px 4px"> Poverty ₱<input id="thP" type="number" value="' + esc(c.poverty_threshold) + '" style="width:70px;padding:1px 4px">';
-    ['thF', 'thP'].forEach(function (id) { $('#' + id).onchange = function () { var f = num($('#thF').value), p = num($('#thP').value); if (f === null || p === null) return; c.food_threshold = f; c.poverty_threshold = p; store('config', { food_threshold: f, poverty_threshold: p }); route(); }; });
-  }
-  thChip();
   $('#newRun').onclick = function () { S.run = newRun(); S.view = 'run'; S.tab = 'roster'; route(); };
   S.who = load('who') || 'mine';
   $('#runQ').oninput = function () { S.q = this.value; renderNav(); };

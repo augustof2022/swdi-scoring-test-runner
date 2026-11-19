@@ -7,10 +7,13 @@ const cfg = JSON.parse(fs.readFileSync(R('config.json'), 'utf8'));
 const sheetId = process.env.SHEET_ID || cfg.sheetId;
 const read = p => fs.readFileSync(R(p), 'utf8');
 const tpl = read('src/index.html');
+const records = read('src/planning-records.js');
+const planningVariables = require('../engine/swdi-coverage').variables;
 const inline = t => t.replace('/*ENGINE*/', () => read('engine/swdi-engine.js')).replace('/*PLANNER*/', () => read('engine/swdi-planner.js'))
+  .replace('/*COVERAGE*/', () => read('engine/swdi-coverage.js')).replace('/*PLANNING_RECORDS*/', () => records)
   .replace('/*FIELDS*/', () => read('engine/swdi-fields.js')).replace('/*SCENARIOS*/', () => read('engine/swdi-scenarios.js')).replace('/*FPF*/', () => read('engine/swdi-fpf.js'));
 const page = inline(tpl);
-const server = read('src/Code.js').replace('__SHEET_ID__', sheetId);
+const server = read('src/Code.js').replace('__SHEET_ID__', sheetId).replace('/*PLANNING_VARIABLES*/[]', JSON.stringify(planningVariables)) + '\n' + records;
 const manifest = read('src/appsscript.json');
 const digest = createHash('sha256').update(JSON.stringify([page, server, manifest])).digest('hex').slice(0, 8);
 const release = 'v' + require('../package.json').version + ' · ' + digest;

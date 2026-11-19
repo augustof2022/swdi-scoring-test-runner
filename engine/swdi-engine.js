@@ -338,8 +338,11 @@
       if (pci < food) { lvl = 1; br = 'C.L1.food_poor'; why += ' < food ₱' + food; }
       else if (pci < pov) { lvl = 2; br = 'C.L2.income_poor'; why += ' ≥ food ₱' + food + ' and < poverty ₱' + pov; }
       else { lvl = 3; br = 'C.L3.not_income_poor'; why += ' ≥ poverty ₱' + pov; }
-      if (Math.abs(pci - food) < 1) extra.push('C.bnd.pci_at_food_threshold');
-      if (Math.abs(pci - pov) < 1) extra.push(pci >= pov ? 'C.bnd.pci_at_poverty_threshold' : 'C.bnd.pci_just_below_poverty');
+      [[food, 'food'], [pov, 'poverty']].forEach(function (cut) {
+        var delta = pci - cut[0];
+        if (Math.abs(delta) < 1e-9) extra.push('C.bnd.pci_at_' + cut[1] + '_threshold');
+        else if (Math.abs(delta) < 1) extra.push('C.bnd.pci_just_' + (delta < 0 ? 'below_' : 'above_') + cut[1]);
+      });
     } else why += ' — thresholds not set';
     if (members.some(function (m) { return incomeParts(m).cct > 0; })) extra.push('C.case.4ps_cct_excluded');
     if (members.some(function (m) { return (age(m) || 99) < 15 && incomeParts(m).earn > 0; })) extra.push('C.case.under15_income_excluded');

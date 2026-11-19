@@ -74,7 +74,14 @@ function user_() { try { return Session.getActiveUser().getEmail() || ''; } catc
 function getBootstrap() {
   setupSheet();
   var c = config_(), user = user_();
-  return JSON.stringify({ live: true, user: user, config: c.config, testers: c.testers, runs: table_('Runs'), scores: table_('Scores') });
+  return JSON.stringify({ live: true, user: user, config: c.config, testers: c.testers, runs: table_('Runs'), scores: table_('Scores'), planningRoster: planningRoster_(table_('Roster')) });
+}
+
+// Read a consistent snapshot even when another tester is in the middle of a save.
+function getPlanningHistory() {
+  return withLock_(function () {
+    return JSON.stringify(planningRecords_(table_('Runs'), table_('Scores'), table_('Roster'), table_('Entries'), /*PLANNING_VARIABLES*/[]));
+  });
 }
 
 function getRun(runId) {
