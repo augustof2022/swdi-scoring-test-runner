@@ -75,6 +75,11 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8
 .why{padding:8px 12px;font-size:13px}.why .fam{background:#f7f9fc;border-radius:6px;padding:6px 8px;margin-bottom:6px}
 .mtab td{font-size:12.5px;padding:4px 6px}.mtab tr.ex td{color:#8a96a3}
 .crit{font-size:12.5px;padding:0 12px 10px}.crit li{margin:2px 0}
+.compare-row>td{padding:0 6px 5px}.compare{font-size:12px;color:var(--ink);background:#f7f9fc;border-radius:5px}
+.compare summary{cursor:pointer;padding:4px 7px;color:var(--navy);font-weight:600}
+.compare-body{padding:0 7px 6px;overflow-wrap:anywhere}.compare-body p{margin:4px 0}
+.compare .mtab{background:white}.compare .mtab th,.compare .mtab td{font-size:12px;padding:3px 5px}
+.compare-body details{border-top:1px solid var(--line);margin-top:5px}
 .toast{position:fixed;right:18px;bottom:18px;background:#1d2733;color:#fff;padding:10px 14px;border-radius:8px;opacity:0;transform:translateY(8px);transition:.2s;z-index:50}
 .toast.on{opacity:1;transform:none}
 .legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;align-items:center}
@@ -606,34 +611,42 @@ function judgeOne(p, code, both) {
   var obs = O.mode[p] === 'weighted' ? SWDI.interpretObserved(code, raw, 'weighted') : raw;
   return verdict(code, obs, t.indicators[code].level, s.indicators[code].level);
 }
-function stataRemark(p, code, both) {
-  var raw = S.run.obs[p][code], def = IND.find(function (d) { return d.code === code; });
-  var t = both.target, s = both.stata;
-  function explain(d) {
-    var target = t.indicators[d.code], stata = s.indicators[d.code];
-    function evidence(r) {
-      return (r.members || []).map(function (m) {
-        return 'M' + m.no + ' ' + m.name + ' (' + m.age + '): ' + m.why + ' → ' + memberResult(m);
-      }).join(' · ');
+function ruleComparison(d, both) {
+  var target = both.target.indicators[d.code], stata = both.stata.indicators[d.code];
+  var policy = d.code === 'A' ? 'For members aged 15+, a senior high school diploma qualifies for L3 even with zero reported skills. The family score averages the eligible members.' : '';
+  var stataRule = STATA_NOTES[d.code] || '';
+  return '<div class="compare-body">' +
+    (policy ? '<p>' + esc(policy) + '</p>' : '') +
+    memberTable(target, d.code) + '<p><b>Policy</b> · ' + esc(target.why) + '</p>' +
+    '<p><b>BRVD Stata</b> · ' + esc(stata.why) + (stataRule ? ' ' + esc(stataRule) : '') + '</p>' +
+    (stata.members && stata.members.length ? '<details><summary>Stata member breakdown</summary>' + memberTable(stata, d.code) + '</details>' : '') +
+    '<details><summary>Policy criteria</summary>' + [1, 2, 3].map(function (level) {
+      return '<p><b>L' + level + '</b> · ' + esc(d.criteria[level]) + '</p>';
+    }).join('') + '</details></div>';
+}
+function comparisonDetails(p, code, both) {
+  var def = IND.find(function (d) { return d.code === code; });
+  function title(d) {
+    var target = both.target.indicators[d.code], levels = '';
+    if (d.agg === 'AVG' && target.members) {
+      var counts = [1, 2, 3].map(function (level) {
+        var n = target.members.filter(function (m) { return m.level === level; }).length;
+        return n ? n + ' at L' + level : '';
+      }).filter(Boolean);
+      if (counts.length) levels = ' (' + counts.join(', ') + ')';
     }
-    return 'Policy level ' + lvlTxt(target.level) + '. ' + target.why + '\n' + evidence(target) +
-      '\nBRVD Stata comparison level ' + lvlTxt(stata.level) + '. ' + stata.why +
-      (STATA_NOTES[d.code] ? ' ' + STATA_NOTES[d.code] : '') + (stata.members ? '\n' + evidence(stata) : '');
+    return 'Policy L' + lvlTxt(target.level) + levels + ' · Stata L' + lvlTxt(both.stata.indicators[d.code].level);
   }
-  var observed = 'Observed ' + (p === 'swdi' ? 'SWDI App' : '4Ps Forward') + ' score: ' + raw;
-  if (def) return observed + (S.run.obs.mode[p] === 'weighted' ? ' (weighted)' : ' (level)') + '.\n' + explain(def);
-  var tt = totalsOf(t), st = totalsOf(s), key = code;
-  if ((code === 'ES' || code === 'SA') && Math.abs(num(raw) - tt[code + '_R']) < Math.abs(num(raw) - tt[code])) key += '_R';
+  if (def) return '<details class="compare"><summary>' + title(def) + ' · Why?</summary>' + ruleComparison(def, both) + '</details>';
+  var tt = totalsOf(both.target), st = totalsOf(both.stata), key = code, raw = num(S.run.obs[p][code]);
+  if ((code === 'ES' || code === 'SA') && Math.abs(raw - tt[code + '_R']) < Math.abs(raw - tt[code])) key += '_R';
   var changed = IND.filter(function (d) {
     return (code !== 'ES' && code !== 'SA' || code === d.dim) && both.divergent.indexOf(d.code) >= 0;
   });
-  return observed + '. Policy: ' + fmt(tt[key], 5) + '. BRVD Stata comparison: ' + fmt(st[key], 5) + '.\n' +
-    changed.map(function (d) { return d.code + ' — ' + d.name + '\n' + explain(d); }).join('\n');
-}
-function verdictCell(p, code, both) {
-  var result = judgeOne(p, code, both);
-  return pill(result) + (result === 'STATA RULE' ? '<details class="small" open><summary>Remarks</summary><div style="white-space:pre-line">' +
-    esc(stataRemark(p, code, both)) + '</div></details>' : '');
+  return '<details class="compare"><summary>Policy ' + fmt(tt[key], 5) + ' · Stata ' + fmt(st[key], 5) + ' · Why?</summary><div class="compare-body">' +
+    changed.map(function (d) {
+      return '<details><summary>' + esc(d.code + ' · ' + d.name) + ' · ' + title(d) + '</summary>' + ruleComparison(d, both) + '</details>';
+    }).join('') + '</div></details>';
 }
 function tabVerify() {
   var R = S.run, both = expectedFor(R), t = both.target, tt = totalsOf(t), O = R.obs;
@@ -650,17 +663,25 @@ function tabVerify() {
         return '<tr style="background:#f7f9fc"><td><b>' + d.name + '</b></td><td class="num">' + fmt(tt[d.code], 5) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + '</table></div>';
   }
-  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison. The remarks show the responses and both calculations; <b>ROUNDING</b> = it rounded a family average.</div>' +
+  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison. Open <b>Why?</b> below a matching verdict to compare the member responses and calculations; <b>ROUNDING</b> = it rounded a family average.</div>' +
     '<div class="row noprint" style="margin-bottom:10px"><button class="btn sm" id="goImport">Import 4Ps Forward scores from the capture extension…</button>' + (R.fpfUrl ? '<a class="small" target="_blank" rel="noopener" href="' + esc(R.fpfUrl) + '">Open in 4Ps Forward ↗</a>' : '') + '</div>' +
     '<div class="grid2">' + col('swdi', 'SWDI App') + col('fpf', '4Ps Forward') + '</div>' +
     '<div class="card"><label class="field">Notes<textarea id="vNotes">' + esc(R.notes) + '</textarea></label></div>' +
     '<div class="sticky"><button class="btn pri" id="saveVer">Save results</button><span class="small muted">Saving sets the status from what you filled in.</span></div>';
   $('#goImport').onclick = function () { S.view = 'import'; route(); };
-  function judgeAll() { ['swdi', 'fpf'].forEach(function (p) { IND.concat(TOTALS).forEach(function (d) { var c = $('#v' + p + d.code); if (c) c.innerHTML = verdictCell(p, d.code, both); }); }); }
-  judgeAll();
+  function updateVerdict(p, code) {
+    var cell = $('#v' + p + code), row = cell.parentElement, next = row.nextElementSibling;
+    var result = judgeOne(p, code, both);
+    cell.innerHTML = pill(result);
+    if (next && next.classList.contains('compare-row')) next.remove();
+    if (result === 'STATA RULE') {
+      row.insertAdjacentHTML('afterend', '<tr class="compare-row"><td colspan="4">' + comparisonDetails(p, code, both) + '</td></tr>');
+    }
+  }
+  ['swdi', 'fpf'].forEach(function (p) { IND.concat(TOTALS).forEach(function (d) { updateVerdict(p, d.code); }); });
   var body = $('#tabBody');
   body.addEventListener('input', function (e) {
-    if (e.target.classList.contains('vin')) { O[e.target.dataset.p][e.target.dataset.c] = e.target.value; S.dirty = true; var c = $('#v' + e.target.dataset.p + e.target.dataset.c); c.innerHTML = verdictCell(e.target.dataset.p, e.target.dataset.c, both); }
+    if (e.target.classList.contains('vin')) { O[e.target.dataset.p][e.target.dataset.c] = e.target.value; S.dirty = true; updateVerdict(e.target.dataset.p, e.target.dataset.c); }
     if (e.target.id === 'vNotes') { R.notes = e.target.value; S.dirty = true; }
   });
   body.addEventListener('change', function (e) { if (e.target.type === 'radio') { O.mode[e.target.name.slice(1)] = e.target.value; renderRun(); } });

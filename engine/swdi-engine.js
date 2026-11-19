@@ -144,8 +144,9 @@
     if (n >= 2 && !rec) { lvl = 3; br = 'A.L3.two_plus_skills'; }
     if (shs) { if (lvl !== 3) br = 'A.L3.shs_or_higher'; lvl = 3; }
     why = n + ' skill(s)' + (n ? (rec ? ', at least one recognized' : ', none recognized') : '') + '; ' +
-      (attending ? 'attending, grade ' + (blank(m.gradel) ? '—' : m.gradel) : 'highest attainment ' + (blank(m.educal) ? '—' : m.educal) + (rs === 'stata' ? ' (Stata reads gradel only)' : '')) +
-      (shs ? ' = SHS diploma or higher' : ' (not SHS graduate)');
+      (attending ? 'attending, grade ' + (blank(m.gradel) ? '—' : m.gradel) : 'highest attainment ' + (blank(m.educal) ? '—' : m.educal)) +
+      (!attending && rs === 'stata' ? ' (highest attainment is not used by Stata)' :
+        shs ? ' = SHS diploma or higher' : ' (no qualifying diploma recorded)');
     var extra = [];
     if (shs) extra.push('A.code.' + shsBucket(edu));
     if (!shs && [34011, 34012, 34021, 34022, 34031, 34032, 35011, 35012].indexOf(num(edu)) >= 0) extra.push('A.bnd.grade11_12_not_graduate');
