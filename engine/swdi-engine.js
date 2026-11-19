@@ -350,11 +350,15 @@
   }
 
   function fFinInst(members, rs) {
-    var el = rs === 'stata' ? members : members.filter(function (m) { return (age(m) || 0) >= 15; });
+    function eligible(m) { return active(m) && (rs === 'stata' || age(m) >= 15); }
+    function label(m) { return m.name || m.fname || ('Member ' + m.no); }
+    var el = members.filter(eligible);
     var ins = el.filter(function (m) { return is(m.insurance, 1); }).length;
     var acct = el.filter(function (m) { return is(m.finance_acct, 1); }).length;
-    var sav = el.filter(function (m) { return is(m.savings, 1); }).length;
-    var access = el.filter(function (m) { return is(m.insurance, 1) || is(m.finance_acct, 1); }).length;
+    var savers = el.filter(function (m) { return is(m.savings, 1); });
+    function hasAccess(m) { return is(m.insurance, 1) || is(m.finance_acct, 1); }
+    var accessMembers = el.filter(hasAccess);
+    var sav = savers.length, access = accessMembers.length;
     var lvl = null, br;
     if (rs === 'stata') {
       if (ins === 0 && acct === 0) { lvl = 1; br = 'E.L1.no_access'; }
@@ -368,11 +372,32 @@
     }
     var why = (rs === 'stata' ? 'all members: ' : 'members 15+: ') + ins + ' with insurance, ' + acct + ' with account, ' + access + ' with either, ' + sav + ' with savings' +
       (rs === 'stata' ? ' (Stata counts insurance and accounts separately)' : ' (combined access count)');
+    var rows;
+    if (rs === 'target') {
+      rows = members.map(function (m) {
+        var contribution = [];
+        if (!active(m)) contribution.push(is(m.status, 2) ? 'Excluded (deceased)' : 'Excluded (inactive or moved out)');
+        else if (!eligible(m)) contribution.push('Excluded (requires age 15+)');
+        else {
+          if (hasAccess(m)) contribution.push('Counts as one member with access');
+          if (is(m.savings, 1)) contribution.push('Meets the savings criterion');
+          if (!contribution.length) contribution.push('No qualifying Yes response');
+        }
+        return { no: m.no, name: m.name || m.fname || '', age: age(m), contribution: contribution.join('. '),
+          why: 'Insurance: ' + yn(m.insurance) + ' · Financial account: ' + yn(m.finance_acct) + ' · Savings: ' + yn(m.savings) };
+      });
+      var reasons = [];
+      if (sav) reasons.push(savers.map(label).join(', ') + (sav === 1 ? ' has' : ' have') + ' savings. One member with savings qualifies the family for Level 3.');
+      if (access >= 2) reasons.push(accessMembers.map(label).join(', ') + ' each have insurance or a financial account. At least two distinct members with access qualify the family for Level 3.');
+      if (lvl === 2) reasons.push(label(accessMembers[0]) + ' is the only member with access, and no eligible member reported savings.');
+      if (lvl === 1) reasons.push(el.length ? 'No eligible member reported insurance, a financial account, or savings.' : 'No eligible member contributed to the count.');
+      why = 'Family Level ' + lvl + '. ' + reasons.join(' ');
+    }
     var extra = [];
     if (ins === 1 && acct === 1 && access === 2 && sav === 0) extra.push('E.div.two_members_different_access');
     if (access === 1 && ins === 1 && acct === 1) extra.push('E.case.same_member_insurance_and_account');
     if (sav >= 1 && access === 0) extra.push('E.case.savings_only');
-    return { level: lvl, br: br || 'E.unanswered', extra: extra, why: why, detail: { insurance: ins, account: acct, savings: sav, members_with_access: access } };
+    return { level: lvl, br: br || 'E.unanswered', members: rows, extra: extra, why: why, detail: { insurance: ins, account: acct, savings: sav, members_with_access: access } };
   }
 
   function fWater(hh, rs) {
@@ -638,7 +663,7 @@
     function famInd(r) {
       var brs = [r.br].concat(r.extra || []);
       var d = r.detail ? Object.keys(r.detail).map(function (k) { return k + '=' + r.detail[k]; }).join('; ') : '';
-      return { level: r.level, branches: uniq(brs), detail: d, why: r.why || '', na: r.level === null };
+      return { level: r.level, members: r.members, branches: uniq(brs), detail: d, why: r.why || '', na: r.level === null };
     }
     function aggregate(rows, how) {
       var lv = rows.filter(function (r) { return r.level !== null; }).map(function (r) { return r.level; });
@@ -653,7 +678,7 @@
     I.B = memberInd('B', mEmployment, 'AVG');
     I.C = famInd(fIncome(hh, rs === 'stata' ? all : mem, rs, opts.thresholds));   // Stata family size = all captured members - OFW
     I.D = memberInd('D', mSocsec, 'MAX');
-    I.E = famInd(fFinInst(mem, rs));
+    I.E = famInd(fFinInst(all, rs));
     I.F = memberInd('F', mHealthSvc, 'AVG');
     I.G = memberInd('G', mHealthCond, 'MIN');
     I.H = memberInd('H', mNutrition, 'AVG');

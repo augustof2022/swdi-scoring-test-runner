@@ -125,3 +125,22 @@ test('guided planning supplies annual income for every worker, including a multi
   const total = p.household.members.reduce((acc, m) => acc + (m.wagcshm || 0) + (m.entrep_income || 0), 0);
   assert.equal(total, Math.floor(TH.food / 2 * 12 * roster.length));
 });
+
+test('financial access explains who qualifies the family for each level', () => {
+  const members = [person(1, 21, { name: 'Ana', insurance: 1, finance_acct: 1 }),
+    person(2, 15, { name: 'Ben', finance_acct: 1 }), person(3, 14, { name: 'Cam', savings: 1 }),
+    person(4, 42, { name: 'Dee', savings: 1, status: 3 })];
+  const result = () => E.scoreBoth(hh(members), { thresholds: TH });
+  const e = result().target.indicators.E;
+  assert.equal(e.level, 3);
+  assert.match(e.why, /Ana, Ben each have/);
+  assert.match(e.members[0].why, /Insurance: Yes · Financial account: Yes · Savings: No/);
+  assert.match(e.members[2].contribution, /requires age 15/);
+  assert.match(e.members[3].contribution, /moved out/);
+  members[1].finance_acct = 2;
+  assert.match(result().target.indicators.E.why, /Level 2.*Ana is the only member/);
+  members[0].finance_acct = members[0].insurance = 2;
+  assert.equal(result().target.indicators.E.level, 1);
+  members[1].savings = 1;
+  assert.match(result().target.indicators.E.why, /Family Level 3. Ben has savings/);
+});

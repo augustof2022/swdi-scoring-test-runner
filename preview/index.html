@@ -88,7 +88,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
 <body>
 <div class="top">
   <h1>SWDI Scoring Test Runner</h1>
-  <span class="chip" id="appRelease" aria-label="App version">v2.1.0 · 09e6c172</span>
+  <span class="chip" id="appRelease" aria-label="App version">v2.1.0 · 1986a67c</span>
   <span class="chip" id="modeChip">loading…</span>
   <span class="sp"></span>
   <span class="chip" id="thChip"></span>
@@ -464,11 +464,15 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
   }
 
   function fFinInst(members, rs) {
-    var el = rs === 'stata' ? members : members.filter(function (m) { return (age(m) || 0) >= 15; });
+    function eligible(m) { return active(m) && (rs === 'stata' || age(m) >= 15); }
+    function label(m) { return m.name || m.fname || ('Member ' + m.no); }
+    var el = members.filter(eligible);
     var ins = el.filter(function (m) { return is(m.insurance, 1); }).length;
     var acct = el.filter(function (m) { return is(m.finance_acct, 1); }).length;
-    var sav = el.filter(function (m) { return is(m.savings, 1); }).length;
-    var access = el.filter(function (m) { return is(m.insurance, 1) || is(m.finance_acct, 1); }).length;
+    var savers = el.filter(function (m) { return is(m.savings, 1); });
+    function hasAccess(m) { return is(m.insurance, 1) || is(m.finance_acct, 1); }
+    var accessMembers = el.filter(hasAccess);
+    var sav = savers.length, access = accessMembers.length;
     var lvl = null, br;
     if (rs === 'stata') {
       if (ins === 0 && acct === 0) { lvl = 1; br = 'E.L1.no_access'; }
@@ -482,11 +486,32 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     }
     var why = (rs === 'stata' ? 'all members: ' : 'members 15+: ') + ins + ' with insurance, ' + acct + ' with account, ' + access + ' with either, ' + sav + ' with savings' +
       (rs === 'stata' ? ' (Stata counts insurance and accounts separately)' : ' (combined access count)');
+    var rows;
+    if (rs === 'target') {
+      rows = members.map(function (m) {
+        var contribution = [];
+        if (!active(m)) contribution.push(is(m.status, 2) ? 'Excluded (deceased)' : 'Excluded (inactive or moved out)');
+        else if (!eligible(m)) contribution.push('Excluded (requires age 15+)');
+        else {
+          if (hasAccess(m)) contribution.push('Counts as one member with access');
+          if (is(m.savings, 1)) contribution.push('Meets the savings criterion');
+          if (!contribution.length) contribution.push('No qualifying Yes response');
+        }
+        return { no: m.no, name: m.name || m.fname || '', age: age(m), contribution: contribution.join('. '),
+          why: 'Insurance: ' + yn(m.insurance) + ' · Financial account: ' + yn(m.finance_acct) + ' · Savings: ' + yn(m.savings) };
+      });
+      var reasons = [];
+      if (sav) reasons.push(savers.map(label).join(', ') + (sav === 1 ? ' has' : ' have') + ' savings. One member with savings qualifies the family for Level 3.');
+      if (access >= 2) reasons.push(accessMembers.map(label).join(', ') + ' each have insurance or a financial account. At least two distinct members with access qualify the family for Level 3.');
+      if (lvl === 2) reasons.push(label(accessMembers[0]) + ' is the only member with access, and no eligible member reported savings.');
+      if (lvl === 1) reasons.push(el.length ? 'No eligible member reported insurance, a financial account, or savings.' : 'No eligible member contributed to the count.');
+      why = 'Family Level ' + lvl + '. ' + reasons.join(' ');
+    }
     var extra = [];
     if (ins === 1 && acct === 1 && access === 2 && sav === 0) extra.push('E.div.two_members_different_access');
     if (access === 1 && ins === 1 && acct === 1) extra.push('E.case.same_member_insurance_and_account');
     if (sav >= 1 && access === 0) extra.push('E.case.savings_only');
-    return { level: lvl, br: br || 'E.unanswered', extra: extra, why: why, detail: { insurance: ins, account: acct, savings: sav, members_with_access: access } };
+    return { level: lvl, br: br || 'E.unanswered', members: rows, extra: extra, why: why, detail: { insurance: ins, account: acct, savings: sav, members_with_access: access } };
   }
 
   function fWater(hh, rs) {
@@ -752,7 +777,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     function famInd(r) {
       var brs = [r.br].concat(r.extra || []);
       var d = r.detail ? Object.keys(r.detail).map(function (k) { return k + '=' + r.detail[k]; }).join('; ') : '';
-      return { level: r.level, branches: uniq(brs), detail: d, why: r.why || '', na: r.level === null };
+      return { level: r.level, members: r.members, branches: uniq(brs), detail: d, why: r.why || '', na: r.level === null };
     }
     function aggregate(rows, how) {
       var lv = rows.filter(function (r) { return r.level !== null; }).map(function (r) { return r.level; });
@@ -767,7 +792,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     I.B = memberInd('B', mEmployment, 'AVG');
     I.C = famInd(fIncome(hh, rs === 'stata' ? all : mem, rs, opts.thresholds));   // Stata family size = all captured members - OFW
     I.D = memberInd('D', mSocsec, 'MAX');
-    I.E = famInd(fFinInst(mem, rs));
+    I.E = famInd(fFinInst(all, rs));
     I.F = memberInd('F', mHealthSvc, 'AVG');
     I.G = memberInd('G', mHealthCond, 'MIN');
     I.H = memberInd('H', mNutrition, 'AVG');
@@ -1745,6 +1770,20 @@ function tabAnswers() {
 }
 
 // ---------- expected ----------
+function memberResult(m) {
+  return m.contribution || (m.level === null ? 'excluded' : 'L' + m.level);
+}
+function memberTable(a, code) {
+  if (!a.members) return '';
+  var financial = code === 'E';
+  var headers = financial ? '<th>Responses</th><th>Contribution to family level</th>' : '<th>Expected level</th><th>Answer and criterion</th>';
+  var rows = a.members.map(function (m) {
+    var response = '<td>' + esc(m.why) + '</td>', result = '<td><b>' + esc(memberResult(m)) + '</b></td>';
+    return '<tr' + (m.level === null ? ' class="ex"' : '') + '><td>M' + esc(m.no) + ' ' + esc(m.name) + ' (' + esc(m.age) + ')</td>' +
+      (financial ? response + result : result + response) + '</tr>';
+  });
+  return '<table class="mtab"><tr><th>Member (age)</th>' + headers + '</tr>' + rows.join('') + '</table>';
+}
 function tabExpected() {
   var R = S.run, both = expectedFor(R), t = both.target, s = both.stata;
   var thw = th();
@@ -1756,9 +1795,7 @@ function tabExpected() {
     var a = t.indicators[d.code], b = s.indicators[d.code], conf = both.divergent.indexOf(d.code) >= 0;
     html += '<div class="ind"><div class="h"><b>' + d.code + '</b><span>' + esc(d.name) + '</span><span class="pill">' + esc(d.cov) + ' · ' + esc(d.agg) + ' · w ' + d.w.toFixed(4) + '</span>' +
       '<div class="lv">' + (conf ? '<span class="pill v-STATA" title="' + esc(b.why) + '">Stata: ' + lvlTxt(b.level) + '</span>' : '') + '<span class="small muted">weighted ' + fmt(a.weighted, 5) + '</span><span class="big">' + lvlTxt(a.level) + '</span></div></div>' +
-      '<div class="why">' + (a.members ? '<table class="mtab"><tr><th>Member (age)</th><th>Expected level</th><th>Answer and criterion</th></tr>' + a.members.map(function (m) {
-        return '<tr' + (m.level === null ? ' class="ex"' : '') + '><td style="width:200px">M' + m.no + ' ' + esc(m.name) + ' (' + m.age + ')</td><td style="width:70px"><b>' + (m.level === null ? 'excluded' : 'L' + m.level) + '</b></td><td>' + esc(m.why) + '</td></tr>';
-      }).join('') + '</table>' : '') + '<div class="fam">' + esc(a.why) + '</div>' + (conf ? '<div class="small" style="color:#8a5a00;margin-top:4px">Stata as written → ' + lvlTxt(b.level) + ': ' + esc(b.why) + (STATA_NOTES[d.code] ? ' — ' + esc(STATA_NOTES[d.code]) : '') + '</div>' : '') + '</div>' +
+      '<div class="why">' + memberTable(a, d.code) + '<div class="fam">' + esc(a.why) + '</div>' + (conf ? '<div class="small" style="color:#8a5a00;margin-top:4px">Stata as written → ' + lvlTxt(b.level) + ': ' + esc(b.why) + (STATA_NOTES[d.code] ? ' — ' + esc(STATA_NOTES[d.code]) : '') + '</div>' : '') + '</div>' +
       '<details class="crit"><summary class="small muted" style="cursor:pointer">Criteria</summary><ul>' + [1, 2, 3].map(function (l) { return '<li' + (a.level === l ? ' style="font-weight:600"' : '') + '>Level ' + l + ': ' + esc(d.criteria[l]) + '</li>'; }).join('') + '</ul></details></div>';
   });
   html += '<div class="sticky"><button class="btn pri" id="saveExp">Save run</button><button class="btn" id="goVer">Next: verify scores →</button></div>';
@@ -1883,7 +1920,7 @@ function buildPayload() {
     var row = { Key: 'x|' + d.code, Code: d.code, Indicator: d.name, Weight: d.w || '', 'Expected level (target)': isI ? (a.level === null ? '' : Math.round(a.level * 100000) / 100000) : tt[d.code],
       'Expected weighted': isI ? (a.weighted === null ? '' : a.weighted) : '', 'Stata level': isI ? (b.level === null ? '' : Math.round(b.level * 100000) / 100000) : (st[d.code] === null ? '' : st[d.code]),
       'Rule conflict': isI ? both.divergent.indexOf(d.code) >= 0 : tt[d.code] !== st[d.code],
-      'How graded (target)': isI ? a.why : '', 'Member breakdown': isI && a.members ? a.members.map(function (m) { return 'M' + m.no + ' ' + m.name + ' (' + m.age + '): ' + (m.level === null ? 'excluded' : 'L' + m.level) + ' — ' + m.why; }).join('\n') : '',
+      'How graded (target)': isI ? a.why : '', 'Member breakdown': isI && a.members ? a.members.map(function (m) { return 'M' + m.no + ' ' + m.name + ' (' + m.age + '): ' + memberResult(m) + ' — ' + m.why; }).join('\n') : '',
       'Stata as written': isI && both.divergent.indexOf(d.code) >= 0 ? b.why : '',
       'SWDI App observed (level)': obsLevel('swdi', d), 'SWDI App verdict': judgeOne('swdi', d.code, both), '4Ps Forward observed (level)': obsLevel('fpf', d), '4Ps Forward verdict': judgeOne('fpf', d.code, both),
       'Scenarios exercised': '|' + (isI ? a.branches.concat(b.branches.filter(function (x) { return /\.div\.|stata_missing|precedence_bug/.test(x) && x[0] === d.code; })) : d.code === 'LOWB' ? t.branches.filter(function (x) { return x[0] === 'Z'; }) : []).filter(function (x, i, arr) { return arr.indexOf(x) === i; }).join('|') + '|',
