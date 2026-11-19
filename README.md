@@ -74,6 +74,8 @@ npm run build       # dist/ for clasp + preview/index.html (stand-alone demo, da
 * After changing engine branches: `npm run catalog`. This rebuilds the scenario catalog; then reload the Scenarios tab with the new rows.
 * The sheet structure is defined by `SCHEMA` in `src/Code.js`. `sheet/build_sheet.py` builds the initial workbook from it, and `setupSheet()` recreates any missing tab.
 
+Indicator V uses the BRVD v0.4 Scoring Rules Level 2 criterion (“any member”). Two or more members with no officer and fewer than two participants score Level 2. The review comment on row 112 proposes exactly one member, which leaves that case unassigned.
+
 ## Open rules to confirm with SCMD
 
 These show up as **Needs DSWD confirmation** or `N/A CHECK`:
@@ -82,7 +84,6 @@ These show up as **Needs DSWD confirmation** or `N/A CHECK`:
 * improved toilet shared with other families: L2 or L3
 * literate member who cannot understand simple messages
 * assets: count quantity or item types
-* 2+ organization members, none active
 * DRRM "not recovered" with 1–2 items
 * internet use with no activity selected
 * nutrition fields recorded as Yes/No in Odoo but as maln codes in BRVD

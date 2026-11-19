@@ -152,6 +152,7 @@
     }
     if (a1 && a2) {
       c.push({ ind: 'E', patches: p([[a1, { insurance: 1 }], [a2, { finance_acct: 1 }]]) }); c.push({ ind: 'E', patches: p([[a1, { finance_acct: 1 }], [a2, { finance_acct: 1 }]]) });
+      c.push({ ind: 'V', patches: p([[a1, { orgmem: 1, orgact1: 1, orgofficer1: 2 }], [a2, { orgmem: 1, orgact1: 2, orgofficer1: 2 }]]) });
       c.push({ ind: 'V', patches: p([[a1, { orgmem: 1, orgact1: 1, orgofficer1: 2 }], [a2, { orgmem: 1, orgact1: 1, orgofficer1: 2 }]]) });
       c.push({ ind: 'V', patches: p([[a1, { orgmem: 1, orgact1: 2, orgofficer1: 2 }], [a2, { orgmem: 1, orgact1: 2, orgofficer1: 2 }]]) });
     }

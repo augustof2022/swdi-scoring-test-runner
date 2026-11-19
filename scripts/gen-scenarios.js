@@ -5,7 +5,7 @@ const { LISTS } = require('../engine/swdi-fields.js');
 const IDS = require('../sheet/scenario_ids.json');
 const D = {
   'B.L2.short_term_seasonal_casual_not_past_week': 'Has a short-term/seasonal/casual job but did not work past week → L2', 'D.excl.under15': 'Under 15 excluded',
-  'J.L2.precedence_bug': 'Open defecation with "shared? = No": Stata operator precedence assigns L2', 'V.undefined_by_target_rule': '2+ members in organizations, none active: DSWD "exactly one" rule gives no level',
+  'J.L2.precedence_bug': 'Open defecation with "shared? = No": Stata operator precedence assigns L2', 'V.case.two_members_one_participant': '2+ members, one participant, no officers → L2',
   'W.case.incomplete_immunization': 'Child 0-5 without all mandatory vaccines', 'W.case.not_enrolled_or_low_attendance': 'Child 3-17 not enrolled or attendance below 85%',
   'A.L1.no_skill': 'Member 15+ with 0 skills and no SHS diploma → L1', 'A.L2.one_skill_not_recognized': '1 skill, not duly recognized → L2',
   'A.L3.recognized_skill': 'At least 1 duly recognized skill → L3', 'A.L3.two_plus_skills': '2+ skills, none recognized → L3',
@@ -57,8 +57,8 @@ const D = {
   'T.L1': 'Parenting practices 0-1 → L1', 'T.L2': 'Parenting practices 2-4 → L2', 'T.L3': 'Parenting practices 5-9 → L3',
   'U.L1.no_solution': 'Problem, no solution identified → L1', 'U.L2.solution_not_resolved': 'Solution identified, not resolved → L2', 'U.L3.no_problem': 'No problem → L3', 'U.L3.resolved': 'All problems resolved → L3',
   'U.case.multiple_problems': 'More than one problem', 'U.div.worst_case_mixed_problems': 'Problems with different statuses — target worst case; Stata "resolved" overwrites to L3',
-  'V.L1.no_member': 'No member in an organization → L1', 'V.L2.member_only': 'One member is part of an organization → L2', 'V.L2.one_member_participated': 'One member participated in activities → L2',
-  'V.L3.officer': 'A member is an officer → L3', 'V.L3.two_plus_participated': '2+ members participated → L3', 'V.div.two_plus_members_not_active': '2+ members, none active/officer: Stata L2; DSWD "==1" leaves no level — confirm',
+  'V.L1.no_member': 'No member in an organization → L1', 'V.L2.member_only': 'At least one member belongs to an organization, no participants or officers → L2', 'V.L2.one_member_participated': 'One member participated in activities → L2',
+  'V.L3.officer': 'A member is an officer → L3', 'V.L3.two_plus_participated': '2+ members participated → L3', 'V.case.two_members_no_participants': '2+ members, no participants or officers → L2',
   'W.L3.every_child_meets_all_applicable': 'Every child 0-17 meets all age-appropriate requirements → L3', 'W.L2.a_child_meets_two_or_more': 'At least one child meets 2+ requirements → L2',
   'W.L1.no_child_meets_two': 'No child meets 2+ requirements → L1', 'W.na.no_children_0_17': 'No children 0-17 — indicator not applicable', 'W.div.partial_vaccines': 'Some vaccines only — Stata counts any vaccine; target needs all mandatory (age 0-5)',
   'W.div.enrolled_attendance_below_85': 'Enrolled but attendance < 85% — Stata counts enrolment; target needs ≥ 85%', 'W.case.child_labor': 'Child engaged in child labour',

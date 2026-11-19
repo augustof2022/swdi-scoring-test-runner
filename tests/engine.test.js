@@ -144,3 +144,26 @@ test('financial access explains who qualifies the family for each level', () => 
   members[1].savings = 1;
   assert.match(result().target.indicators.E.why, /Family Level 3. Ben has savings/);
 });
+
+test('participation gives two members Level 2 until officer or activity counts qualify for Level 3', () => {
+  const members = [person(1, 15, { name: 'Ana', orgmem: 1, orgact1: 2, orgofficer1: 2 }),
+    person(2, 40, { name: 'Ben', orgmem: 1, orgact1: 2, orgofficer1: 2 }),
+    person(3, 14, { orgofficer1: 1 }), person(4, 35, { status: 3, orgact1: 1 })];
+  const v = () => E.score(hh(members)).indicators.V;
+  const r = v();
+  assert.equal(r.level, 2);
+  assert.equal(r.weighted, 0.0186);
+  assert.match(r.why, /Ana, Ben count toward membership/);
+  assert.match(r.members[0].why, /Member: Yes · Participated: No · Officer\/volunteer: No/);
+  assert.match(r.members[2].contribution, /15\+/);
+  assert.match(r.members[3].contribution, /moved out/);
+  members[0].orgact1 = 1;
+  assert.equal(v().level, 2);
+  members[1].orgact1 = 1;
+  assert.match(v().why, /Family Level 3. Ana, Ben participated/);
+  members[0].orgact1 = members[1].orgact1 = 2;
+  members[1].orgofficer1 = 1;
+  assert.match(v().why, /Family Level 3. Ben serves/);
+  members[0].orgmem = members[1].orgmem = members[1].orgofficer1 = 2;
+  assert.equal(v().level, 1);
+});

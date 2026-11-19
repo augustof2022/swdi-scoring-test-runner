@@ -56,7 +56,7 @@
     { code: 'U', key: 'discern', name: 'Ability to discern problems and arrive at solutions', dim: 'SA', w: 0.0185, scope: 'family', agg: 'HH', cov: 'household',
       criteria: { 1: 'Experienced a problem and could not identify any solution', 2: 'Identified solutions but has not resolved the problem yet', 3: 'No problem experienced, or all problems experienced were resolved' } },
     { code: 'V', key: 'participation', name: 'Participation in organizations/associations (past 12 months)', dim: 'SA', w: 0.0093, scope: 'family', agg: 'COUNT', cov: '15+',
-      criteria: { 1: 'No member is part of any organization/association/support group', 2: 'A member is part of an organization, or one member participated in its activities', 3: 'A member is an officer, or more than one member participated in activities' } },
+      criteria: { 1: 'No member is part of any organization/association/support group', 2: 'At least one member belongs to an organization or participated in its activities, and neither Level 3 condition applies', 3: 'A member is an officer, or more than one member participated in activities' } },
     { code: 'W', key: 'childrights', name: 'Protection of the rights of children', dim: 'SA', w: 0.0093, scope: 'family', agg: 'CHILDREN', cov: '0-17',
       criteria: { 1: 'A child experienced only 1 of: birth registered, basic immunization, enrolled & regularly attending, not in child labour', 2: 'A child experienced 2-3 of them', 3: 'Every child experienced all (age-appropriate) of them' } },
     { code: 'X', key: 'gbv', name: 'Protection from gender-based violence', dim: 'SA', w: 0.0093, scope: 'family', agg: 'HH', cov: 'household',
@@ -512,20 +512,46 @@
     return { level: lvl, br: br || 'U.unanswered', extra: extra, why: why };
   }
 
-  function fParticipation(members, rs) {
-    var el = members.filter(function (m) { return (age(m) || 0) >= 15; });
-    var mem = el.filter(function (m) { return is(m.orgmem, 1) || is(m.orgact1, 1); }).length;
-    var act = el.filter(function (m) { return is(m.orgact1, 1); }).length;
-    var off = el.filter(function (m) { return is(m.orgofficer1, 1); }).length;
-    var lvl = null, br;
-    if (mem === 0) { lvl = 1; br = 'V.L1.no_member'; }
-    if (rs === 'stata' ? mem >= 1 : mem === 1) { lvl = 2; br = act === 1 ? 'V.L2.one_member_participated' : 'V.L2.member_only'; }
-    if (act > 1 || off >= 1) { lvl = 3; br = off >= 1 ? 'V.L3.officer' : 'V.L3.two_plus_participated'; }
-    var why = 'members 15+: ' + mem + ' in an organization, ' + act + ' participated in activities, ' + off + ' officer(s)';
-    if (lvl === null) why += ' — the DSWD "exactly one member" rule leaves 2+ inactive members without a level';
+  function fParticipation(members) {
+    var eligible = members.filter(function (m) { return active(m) && age(m) >= 15; });
+    var joined = eligible.filter(function (m) { return is(m.orgmem, 1) || is(m.orgact1, 1); });
+    var participants = eligible.filter(function (m) { return is(m.orgact1, 1); });
+    var officers = eligible.filter(function (m) { return is(m.orgofficer1, 1); });
+    function names(group) {
+      return group.map(function (m) { return m.name || m.fname || ('Member ' + m.no); }).join(', ');
+    }
+    var mem = joined.length, act = participants.length, off = officers.length;
+    var level, branch, reason;
+    if (off) {
+      level = 3; branch = 'V.L3.officer';
+      reason = names(officers) + (off === 1 ? ' serves' : ' serve') + ' as an officer or volunteer. One is sufficient for Level 3.';
+    } else if (act >= 2) {
+      level = 3; branch = 'V.L3.two_plus_participated';
+      reason = names(participants) + ' participated in activities. Two or more participants qualify the family for Level 3.';
+    } else if (mem) {
+      level = 2; branch = act ? 'V.L2.one_member_participated' : 'V.L2.member_only';
+      reason = names(joined) + (mem === 1 ? ' counts' : ' count') + ' toward membership. ' +
+        (act ? 'Only ' + names(participants) + ' reported participating in activities' : 'No eligible member reported participating in activities') +
+        ', and none reported serving as an officer or volunteer.';
+    } else {
+      level = 1; branch = 'V.L1.no_member';
+      reason = 'No eligible member reported membership or participation.';
+    }
+    var rows = members.map(function (m) {
+      var contribution;
+      if (!active(m)) contribution = is(m.status, 2) ? 'Excluded (deceased)' : 'Excluded (inactive or moved out)';
+      else if (!(age(m) >= 15)) contribution = 'Excluded (requires age 15+)';
+      else if (is(m.orgofficer1, 1)) contribution = 'Meets the officer criterion for Level 3';
+      else if (is(m.orgact1, 1)) contribution = 'Counts toward membership and participation';
+      else if (is(m.orgmem, 1)) contribution = 'Counts toward membership';
+      else contribution = 'No qualifying Yes response';
+      return { no: m.no, name: m.name || m.fname || '', age: age(m), contribution: contribution,
+        why: 'Member: ' + yn(m.orgmem) + ' · Participated: ' + yn(m.orgact1) + ' · Officer/volunteer: ' + yn(m.orgofficer1) };
+    });
     var extra = [];
-    if (mem >= 2 && act <= 1 && off === 0) extra.push('V.div.two_plus_members_not_active');
-    return { level: lvl, br: br || 'V.undefined_by_target_rule', extra: extra, why: why, detail: { members: mem, participated: act, officers: off } };
+    if (mem >= 2 && level === 2) extra.push(act ? 'V.case.two_members_one_participant' : 'V.case.two_members_no_participants');
+    return { level: level, br: branch, extra: extra, members: rows, why: 'Family Level ' + level + '. ' + reason,
+      detail: { members: mem, participated: act, officers: off } };
   }
 
   function fChildRights(members, rs) {
@@ -695,7 +721,7 @@
     I.S = famInd(fAssets(hh));
     I.T = famInd(fParenting(hh));
     I.U = famInd(fDiscern(hh, rs));
-    I.V = famInd(fParticipation(mem, rs));
+    I.V = famInd(fParticipation(all));
     I.W = famInd(fChildRights(mem, rs));
     I.X = famInd(fGBV(hh));
     I.Y = famInd(fDRRM(hh, rs));

@@ -126,7 +126,7 @@ var STATA_NOTES = { A: 'Stata covers 18+ only and reads gradel (currently attend
   E: 'Stata counts insurance and accounts separately (A insurance + B account stays Level 2).', F: 'Stata Level 1 has no "got sick" qualifier.', G: 'Stata: not sick → Level 3 even if confined/chronic = Yes.',
   H: 'Stata ignores overweightind, and moderate overwrites severe.', I: 'Stata keeps piped (11, 12) in the > 30 min rule; blank minutes count as > 30.', J: 'Stata operator precedence: any toilet with shared = No passes the Level 2 line.',
   L: 'Stata overwrite turns all-No (Level 1) into Level 2.', O: 'Stata overwrite ignores hazard-prone (light → 2, strong → 3).', P: 'Stata overwrite ignores hazard-prone.', U: 'Stata: any resolved problem overwrites to Level 3 (no worst case).',
-  V: 'Stata: 1 or more members → Level 2 (DSWD asked for exactly 1).', W: 'Stata: any vaccine counts, enrolment only, needs all 4 for Level 3.', Y: 'Stata: any kit item counts, savings not counted, volcanic eruption missing; 3 items without savings → no level.' };
+  W: 'Stata: any vaccine counts, enrolment only, needs all 4 for Level 3.', Y: 'Stata: any kit item counts, savings not counted, volcanic eruption missing; 3 items without savings → no level.' };
 var ALIASES = { A: ['employable skill'], B: ['employment'], C: ['income'], D: ['social security', 'sss/gsis', 'sss'], E: ['financial institution'],
   F: ['availment', 'accessible health', 'health service', 'access to health'], G: ['health condition'], H: ['nutrition'], I: ['drinking water', 'improved water'], J: ['sanitary', 'toilet', 'sanitation'],
   K: ['garbage'], L: ['functional literacy'], M: ['digital literacy'], N: ['school', 'attendance', 'enrolment', 'enrollment'], O: ['roof'], P: ['outer wall', 'walls'],
@@ -524,6 +524,7 @@ function tabAnswers() {
       if (Number(rec.workind) !== 2) delete rec.entrep_income;
       else if (R.mode === 'Guided' && rec.entrep_income == null) rec.entrep_income = 12000;
     }
+    if (v === 'orgmem' && rec[v] !== 1) { delete rec.orgact1; delete rec.orgofficer1; }
     if (v === 'childlabor_yes' && rec[v] !== 1) { delete rec.childlabor; delete rec.indust; }
     if (v === 'jobind' && ![10, 99].includes(rec[v])) delete rec.jobind_specify;
     S.dirty = true;
@@ -542,12 +543,12 @@ function memberResult(m) {
 }
 function memberTable(a, code) {
   if (!a.members) return '';
-  var financial = code === 'E';
-  var headers = financial ? '<th>Responses</th><th>Contribution to family level</th>' : '<th>Expected level</th><th>Answer and criterion</th>';
+  var familyCount = code === 'E' || code === 'V';
+  var headers = familyCount ? '<th>Responses</th><th>Contribution to family level</th>' : '<th>Expected level</th><th>Answer and criterion</th>';
   var rows = a.members.map(function (m) {
     var response = '<td>' + esc(m.why) + '</td>', result = '<td><b>' + esc(memberResult(m)) + '</b></td>';
     return '<tr' + (m.level === null ? ' class="ex"' : '') + '><td>M' + esc(m.no) + ' ' + esc(m.name) + ' (' + esc(m.age) + ')</td>' +
-      (financial ? response + result : result + response) + '</tr>';
+      (familyCount ? response + result : result + response) + '</tr>';
   });
   return '<table class="mtab"><tr><th>Member (age)</th>' + headers + '</tr>' + rows.join('') + '</table>';
 }

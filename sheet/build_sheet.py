@@ -97,7 +97,7 @@ NOTES = {'A': 'Stata covers 18+ only and reads gradel (attending) only.', 'C': '
          'E': 'Stata counts insurance and accounts separately.', 'F': 'Stata Level 1 has no "got sick" qualifier.', 'G': 'Stata: not sick → 3 even if confined/chronic.',
          'H': 'Stata ignores overweightind; moderate overwrites severe.', 'I': 'Stata keeps 11/12 in the > 30 min rule; blank minutes count as > 30.',
          'J': 'Stata precedence: any toilet with shared = No passes the Level 2 line.', 'L': 'Stata overwrite turns all-No into 2.', 'O': 'Stata overwrite ignores hazard-prone.',
-         'P': 'Stata overwrite ignores hazard-prone.', 'U': 'Stata: any resolved problem overwrites to 3.', 'V': 'Stata: ≥1 member → 2 (DSWD asked for exactly 1).',
+         'P': 'Stata overwrite ignores hazard-prone.', 'U': 'Stata: any resolved problem overwrites to 3.',
          'W': 'Stata: any vaccine, enrolment only, needs all 4 for 3.', 'Y': 'Stata: any kit item, no savings, no volcanic eruption; 3 items without savings → missing.'}
 rows = [[d['code'], d['name'], d['dim'], d['w'], d['cov'], d['agg'], d['criteria']['1'], d['criteria']['2'], d['criteria']['3'], NOTES.get(d['code'], 'Same as target.')] for d in IND]
 ws = sheet('Criteria', ['Code', 'Indicator', 'Dim', 'Weight', 'Coverage', 'Family aggregation', 'Level 1', 'Level 2', 'Level 3', 'Stata as written — difference'],
