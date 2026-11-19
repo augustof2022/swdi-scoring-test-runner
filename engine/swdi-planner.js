@@ -41,7 +41,7 @@
     if (a >= 19) { o.educind = 2; o.educal = 24014; }
     if (a >= 5 && a <= 64) { o.literacy_read = 1; o.literacy_write = 1; o.literacy_count = 1; }
     if (a >= 10 && a <= 64) { o.literacy_understand = 1; o.internet = 1; o.digiact = a < 18 ? '1' : '2'; }
-    if (a >= 5 && a <= 17) o.childlabor_yes = 2;
+    if (a >= 5 && a <= 17) o.childlabor = 0;
     if (a >= 15) {
       o.ofw = 2; o.skills_n = 0; o.sssind = 2; o.gsisind = 2; o.insurance = 2; o.finance_acct = 2; o.savings = 2; o.orgmem = 2;
       if (a >= 19 && a <= 64) { o.workind = 1; o.jstatus = 1; } else { o.workind = 2; o.jobind = 2; o.avail = 2; o.willing = 2; }
@@ -135,7 +135,7 @@
     if (a <= 17) {
       add('W', { birthreg: 2 });
       if (a <= 5) { add('W', { vaccine: '1;7' }); add('W', { vaccine: '1;2;3;4;5;6;7' }); add('W', { vaccine: '' }); }
-      if (a >= 5) add('W', { childlabor_yes: 1, childlabor: 1 });
+      if (a >= 5) add('W', { childlabor: 1 });
     }
     return c;
   }
@@ -246,6 +246,16 @@
   // The scenario catalog uses legacy job flags. Translate the finished plan to BRVD v0.4 entries.
   function setEmploymentAnswers(m, memberAge) {
     if (memberAge < 5) return;
+    // Ages 5-14 answer only the child labor activity path, not adult PSOC employment questions.
+    if (memberAge < 15) {
+      ['occup_s', 'workind', 'jobind', 'jobind_specify', 'avail', 'willing', 'jstatus', 'worked_last_week']
+        .forEach(function (key) { delete m[key]; });
+      if (Number(m.childlabor) > 0) {
+        if (m.work_hrs == null) m.work_hrs = 2;
+        if (m.work_tothrs == null) m.work_tothrs = 4;
+      } else { delete m.indust; delete m.work_hrs; delete m.work_tothrs; }
+      return;
+    }
     var working = Number(m.workind) === 1 || Number(m.jobind) === 1;
     if (working) {
       m.occup_s = m.entrep_income > 0 ? 9111 : 5220;
@@ -253,16 +263,18 @@
       m.workind = m.entrep_income > 0 ? 2 : 1;
       delete m.jobind;
       if (m.workind === 1 && m.wagcshm == null) m.wagcshm = 12000;
-      if (memberAge < 18) {
-        m.work_hrs = m.worked_last_week === 1 ? 2 : 0;
-        m.work_tothrs = m.work_hrs * 2;
-      }
     } else {
       m.occup_s = 999;
       delete m.workind;
       m.jobind = memberAge < 18 ? 9 : 4;
       if (m.avail == null) m.avail = 2;
       if (m.willing == null) m.willing = 2;
+    }
+    if (memberAge <= 17) {
+      if (Number(m.childlabor) > 0) {
+        if (m.work_hrs == null) m.work_hrs = 2;
+        if (m.work_tothrs == null) m.work_tothrs = 4;
+      } else { delete m.indust; delete m.work_hrs; delete m.work_tothrs; }
     }
   }
 
