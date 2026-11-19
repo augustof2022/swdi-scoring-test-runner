@@ -93,3 +93,35 @@ test('forms cover every variable the engine reads', () => {
     'jstatus', 'avail', 'willing', 'wagcshm', 'entrep_income', 'other_income', 'pantawidcsh', 'sssind', 'sss_months', 'gsisind', 'gsis_months', 'insurance', 'finance_acct', 'savings',
     'stuntingind', 'overweightind', 'vaccine', 'sickind', 'confine', 'avail_med', 'ynotavail_med', 'birthreg', 'childlabor_yes', 'ofw'].forEach(v => assert.ok(vars.has(v), v));
 });
+
+test('annual rent and monthly other income use the selected period exactly once', () => {
+  const members = [person(1, 30, { wagcshm: 36000, entrep_income: 12000, other_income: 1000, other_period: 1 })];
+  const annual = E.scoreBoth(hh(members, { imprnt: 24000, imprnt_period: 2 }), { thresholds: TH });
+  const monthly = E.scoreBoth(hh(members, { imprnt: 2000 }), { thresholds: TH });
+  assert.equal(annual.target.indicators.C.detail, monthly.target.indicators.C.detail);
+  assert.match(annual.target.indicators.C.why, /₱84,000 total annual income/);
+  assert.match(annual.target.indicators.C.why, /PCI ₱7,000/);
+  assert.match(annual.stata.indicators.C.why, /PCI ₱5,000/);
+});
+
+test('occupation NONE distinguishes a reason code from the old has-job flag', () => {
+  const members = [person(1, 28, { occup_s: 999, jobind: 1, avail: 1, willing: 1 }),
+    person(2, 32, { occup_s: 5220, worked_last_week: 2, workind: 1, jstatus: 2 }), person(3, 12)];
+  const b = E.score(hh(members)).indicators.B;
+  assert.deepEqual(b.members.map(m => m.level), [1, 2, null]);
+  assert.equal(b.level, 1.5);
+  assert.match(b.why, /3 ÷ 2 = 1.5/);
+  const legacy = E.score(hh([person(1, 28, { workind: 2, jobind: 1, jstatus: 1 })])).indicators.B;
+  assert.equal(legacy.level, 3);
+});
+
+test('guided planning supplies annual income for every worker, including a multi-earner family', () => {
+  const roster = [19, 32, 48].map((age, i) => ({ no: i + 1, age }));
+  const p = PL.plan(roster, [], TH);
+  assert.deepEqual(p.household.members.map(m => m.workind), [1, 2, 1]);
+  for (const m of p.household.members) {
+    assert.ok((m.workind === 1 ? m.wagcshm : m.entrep_income) > 0);
+  }
+  const total = p.household.members.reduce((acc, m) => acc + (m.wagcshm || 0) + (m.entrep_income || 0), 0);
+  assert.equal(total, Math.floor(TH.food / 2 * 12 * roster.length));
+});

@@ -12,6 +12,12 @@ const lists = {
   jstatus: pick('jstatus'), ynotavail_med: pick('ynotavail_med'), maln: pick('maln'), schattendance: pick('schattendance'), gvb_res: pick('gvb_res'), recovered: pick('recovered'),
   gvbind: CH.gvbind, disastkit: pick('disastkit', Array.from({ length: 19 }, (_, i) => i + 1)), vaccine: pick('vaccine', [1, 2, 3, 4, 5, 6, 7, 8]), land: CH.land,
   digiact: { 1: 'Information and data literacy', 2: 'Communication and collaboration', 3: 'Digital content creation', 4: 'Safety', 5: 'Problem solving' },
+  income_period: { 1: 'Monthly amount × 12', 2: 'Total for the past 12 months' },
+  work_kind: { 1: 'Work for Pay', 2: 'Work for Profit', 3: 'None of the options' },
+  psoc: pick('psoc'), indust: pick('indust'), childlabor: pick('childlabor'),
+  job_reason: { 1: 'Illness or disability', 2: 'Stricken by disaster', 4: 'Tired/believed no work available',
+    5: 'Awaiting results of previous job application', 6: 'Too young/old', 7: 'Retired', 8: 'Permanent disability/illness',
+    9: 'Schooling', 10: 'Household and family duties, specify', 11: 'Laid off from work', 99: 'Others, specify' },
   gradel: pick('gradel')
 };
 const q = v => (META[v] && META[v].q || v).replace(/member\(#\)/g, 'member').replace(/â€™/g, "'");
@@ -25,7 +31,8 @@ const mm = (sec, v, t, extra) => F.push(Object.assign({ v, s: 'm', sec, q: q(v),
 hh('Housing characteristics', 'roof', 'sel', { list: 'roof' });
 hh('Housing characteristics', 'wall', 'sel', { list: 'wall' });
 hh('Housing', 'tenur', 'sel', { list: 'tenur' });
-hh('Housing', 'imprnt', 'num', { q: 'Imputed rent per month for the house and/or lot (₱)' });
+hh('Housing', 'imprnt_period', 'sel', { q: 'Imputed rent reporting period', list: 'income_period', defaultValue: 1 });
+hh('Housing', 'imprnt', 'num', { q: 'Imputed rent for the house and/or lot (₱)' });
 hh('Housing', 'light', 'sel', { list: 'light' });
 hh('Water, sanitation and garbage', 'water', 'sel', { list: 'water' });
 hh('Water, sanitation and garbage', 'water_dist', 'num', { q: 'Minutes to go, get water and come back', when: 'improved_far' });
@@ -68,14 +75,23 @@ mm('Membership in organizations', 'orgact1', 'yn', { age: [15, 99], when: 'orgme
 mm('Employable skills', 'skills_n', 'num', { age: [15, 99], q: 'Number of skills selected' });
 [1, 2, 3].forEach(i => mm('Employable skills', 'regskill' + i, 'yn', { age: [15, 99], when: 'skill' + i, q: 'Skill ' + i + ' duly recognized?' }));
 mm('Employment', 'ofw', 'yn', { age: [15, 99] });
-mm('Employment', 'workind', 'yn', { age: [15, 99] });
-mm('Employment', 'jobind', 'yn', { age: [15, 99], when: 'workind_no', q: 'Has a job/business though did not work past week?' });
-mm('Employment', 'jstatus', 'sel', { list: 'jstatus', age: [15, 99], when: 'working' });
-mm('Employment', 'avail', 'yn', { age: [15, 99], when: 'not_working', q: 'Available for work?' });
-mm('Employment', 'willing', 'yn', { age: [15, 99], when: 'not_working', q: 'Willing to take up work?' });
-mm('Employment', 'childlabor_yes', 'yn', { age: [5, 17], q: 'Engaged in any listed child-labour work/activity?' });
-mm('Income (past 12 months, ₱)', 'wagcshm', 'num', { q: 'Salaries & wages + commissions + other compensation (A–C)' });
-mm('Income (past 12 months, ₱)', 'entrep_income', 'num', { q: 'Net income from entrepreneurial activities' });
+const employment = (v, t, q, extra) => mm('Employment', v, t, Object.assign({ q, age: [5, 120] }, extra));
+employment('occup_s', 'sel', 'Primary occupation during the past 12 months (PSOC)', { list: 'psoc' });
+employment('workind', 'sel', 'Is the primary occupation classified as work for pay or for profit?', { list: 'work_kind', when: 'has_occupation' });
+employment('jobind', 'sel', 'Why has the member not worked for the past 12 months?', { list: 'job_reason', when: 'no_occupation' });
+employment('jobind_specify', 'text', 'Please specify the duties or other reason', { when: 'specify_reason' });
+employment('avail', 'yn', 'Had an opportunity for work existed, would the member have been available?', { when: 'no_occupation' });
+employment('willing', 'yn', 'Is the member willing to take up work?', { when: 'no_occupation' });
+employment('jstatus', 'sel', "What was the nature of the member's employment in the primary occupation during the past 12 months?", { list: 'jstatus', when: 'has_occupation' });
+employment('worked_last_week', 'yn', 'Did the member work during the past week?', { when: 'has_occupation' });
+employment('childlabor_yes', 'yn', 'Engaged in any listed child-labour work/activity?', { age: [5, 17] });
+employment('childlabor', 'sel', 'Which work or activity did the member engage in?', { list: 'childlabor', age: [5, 17], when: 'childlabor_yes' });
+employment('indust', 'sel', 'In which industry did the member work during the past 12 months?', { list: 'indust', age: [5, 17], when: 'childlabor_yes' });
+employment('work_hrs', 'num', 'How many days did the member work during the past week?', { age: [5, 17], when: 'minor_schedule', min: 0, max: 7 });
+employment('work_tothrs', 'num', 'Total hours worked during the past week', { age: [5, 17], when: 'minor_schedule', min: 0, max: 168 });
+mm('Income (past 12 months, ₱)', 'wagcshm', 'num', { q: 'Total salary, wages, commissions and other compensation for the past 12 months (₱)', when: 'for_pay' });
+mm('Income (past 12 months, ₱)', 'entrep_income', 'num', { q: 'Total net profit for the past 12 months (₱)', when: 'for_profit' });
+mm('Income (past 12 months, ₱)', 'other_period', 'sel', { q: 'Other income reporting period', list: 'income_period', defaultValue: 2 });
 mm('Income (past 12 months, ₱)', 'other_income', 'num', { q: 'Other income EXCLUDING 4Ps and other CCT (remittances, pension, rentals, interest…)' });
 mm('Income (past 12 months, ₱)', 'pantawidcsh', 'num', { q: '4Ps (Pantawid) cash received' });
 mm('Income (past 12 months, ₱)', 'other_cct', 'num', { q: 'Other conditional cash transfers received' });

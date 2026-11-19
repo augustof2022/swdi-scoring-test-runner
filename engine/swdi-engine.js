@@ -157,13 +157,20 @@
     var a = age(m);
     if (a === null || a < 15) return ex('B.excl.under15', 'age ' + a + ' — outside coverage (15+)');
     var w = num(m.workind), j = num(m.jobind), js = num(m.jstatus), lvl = null, br = 'B.excl.not_working_not_willing_available';
-    var why = 'worked past week: ' + yn(w) + (w === 2 ? ', has job/business: ' + yn(j) : '');
-    if (w === 2 && is(m.avail, 1) && is(m.willing, 1)) { lvl = 1; br = 'B.L1.not_working_willing_available'; }
-    if ((w === 1 || (w === 2 && j === 1)) && (js === 2 || js === 3)) { lvl = 2; br = js === 2 ? 'B.L2.short_term_seasonal_casual' : 'B.L2.per_day_per_week'; if (w === 2) br += '_not_past_week'; }
-    if ((w === 1 || (w === 2 && j === 1)) && js === 1) { lvl = 3; br = 'B.L3.regular' + (w === 2 ? '_not_past_week' : ''); }
+    // Older runs stored a yes/no job indicator. Occupation identifies the new reason-code schema.
+    var hasOccupationAnswer = !blank(m.occup_s);
+    if (hasOccupationAnswer) {
+      j = is(m.occup_s, 999) ? 2 : 1;
+      w = j === 2 ? 2 : num(m.worked_last_week);
+    }
+    var employed = hasOccupationAnswer ? j === 1 : w === 1 || (w === 2 && j === 1);
+    var why = (!hasOccupationAnswer ? '' : 'primary occupation: ' + (j === 2 ? 'NONE' : 'PSOC ' + m.occup_s) + ', ') + 'worked past week: ' + yn(w) + (w === 2 ? ', has job/business: ' + yn(j) : '');
+    if ((!hasOccupationAnswer || !employed) && w === 2 && is(m.avail, 1) && is(m.willing, 1)) { lvl = 1; br = 'B.L1.not_working_willing_available'; }
+    if (employed && (js === 2 || js === 3)) { lvl = 2; br = js === 2 ? 'B.L2.short_term_seasonal_casual' : 'B.L2.per_day_per_week'; if (w === 2) br += '_not_past_week'; }
+    if (employed && js === 1) { lvl = 3; br = 'B.L3.regular' + (w === 2 ? '_not_past_week' : ''); }
     if (w === 1 || j === 1) why += '; nature: ' + lb(LBL.jstatus, js);
     else why += '; available: ' + yn(m.avail) + ', willing: ' + yn(m.willing);
-    if (lvl === null) why += ' — not scored (not willing/available), excluded from the average';
+    if (lvl === null) why += (j === 1 || w === 1) ? ' — incomplete employment answers' : ' — excluded from the average';
     return { level: lvl, br: br, why: why };
   }
 
@@ -290,9 +297,10 @@
   // ---------- family-level indicators ----------
   function incomeParts(m) {
     var wage = (num(m.wagcshm) || 0) + (num(m.wagcomm) || 0) + (num(m.wagothm) || 0);
-    var other = (num(m.entrep_income) || 0) + (num(m.other_income) || 0);
+    var profit = num(m.entrep_income) || 0;
+    var other = (num(m.other_income) || 0) * (is(m.other_period, 1) ? 12 : 1);
     var cct = (num(m.pantawidcsh) || 0) + (num(m.pantawidknd) || 0) + (num(m.other_cct) || 0);
-    return { earn: wage + other, cct: cct };
+    return { wage: wage, profit: profit, other: other, earn: wage + profit + other, cct: cct };
   }
   function fIncome(hh, members, rs, th) {
     th = th || {};
@@ -306,12 +314,22 @@
       inc = tot - cct;
       why = 'income of all members ₱' + Math.round(inc).toLocaleString() + ' (CCT excluded, no imputed rent) ÷ 12 ÷ family size ' + fsize + ' (all captured members minus ' + ofw + ' OFW)';
     } else {
-      var act = members.filter(active), under = 0, rent = (num(hh.imprnt) || 0) * 12;
-      fsize = act.length; inc = 0;
-      act.forEach(function (m) { var p = incomeParts(m); if ((age(m) || 0) >= 15) inc += p.earn; else under += p.earn; });
-      inc += rent;
-      why = 'income of active members 15+ ₱' + Math.round(inc - rent).toLocaleString() + ' + imputed rent ₱' + rent.toLocaleString() + ' (×12)' +
-        (under ? ' (₱' + under.toLocaleString() + ' of under-15 income excluded)' : '') + ', 4Ps/CCT excluded, ÷ 12 ÷ family size ' + fsize + ' (active members incl. OFW)';
+      var act = members.filter(active), under = 0;
+      var rentInput = num(hh.imprnt) || 0, monthlyRent = !is(hh.imprnt_period, 2);
+      var rent = rentInput * (monthlyRent ? 12 : 1);
+      var wages = 0, profits = 0, other = 0;
+      act.forEach(function (m) {
+        var p = incomeParts(m);
+        if ((age(m) || 0) < 15) { under += p.earn; return; }
+        wages += p.wage; profits += p.profit; other += p.other;
+      });
+      fsize = act.length;
+      inc = wages + profits + other + rent;
+      why = 'Annual wages ₱' + wages.toLocaleString() + ' + net profit ₱' + profits.toLocaleString() +
+        ' + other annual income ₱' + other.toLocaleString() + ' + imputed rent (₱' + rentInput.toLocaleString() +
+        (monthlyRent ? ' × 12 = ₱' + rent.toLocaleString() : ' annual') + ') = ₱' + inc.toLocaleString() +
+        ' total annual income. 4Ps/CCT excluded' + (under ? ', under-15 earnings excluded ₱' + under.toLocaleString() : '') +
+        '. ₱' + inc.toLocaleString() + ' ÷ 12 = ₱' + f2(inc / 12).toLocaleString() + ' per month ÷ ' + fsize + ' active member(s)';
     }
     var pci = fsize > 0 ? inc / 12 / fsize : 0;
     var lvl = null, br = 'C.no_thresholds';
@@ -613,7 +631,7 @@
       }
       var detail = how + '(' + scored.map(function (r) { return 'm' + r.no + '=' + r.level; }).join(', ') + ')';
       var why = !scored.length ? 'no eligible/scored member — not applicable'
-        : how === 'AVG' ? 'average of ' + scored.length + ' scored member(s): (' + scored.map(function (r) { return r.level; }).join(' + ') + ') ÷ ' + scored.length + ' = ' + f2(lvl)
+        : how === 'AVG' ? 'Family average: (' + scored.map(function (r) { return r.level; }).join(' + ') + ') ÷ ' + scored.length + ' = ' + scored.reduce(function (total, r) { return total + r.level; }, 0) + ' ÷ ' + scored.length + ' = ' + f2(lvl) + ' (final family level)'
           : how === 'MAX' ? 'highest member level (any member qualifies the family) = ' + lvl : 'lowest member level (worst member decides) = ' + lvl;
       return { level: lvl, members: rows, branches: uniq(brs), detail: detail, why: why, na: lvl === null };
     }

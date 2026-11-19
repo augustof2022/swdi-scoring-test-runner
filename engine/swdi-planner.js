@@ -238,7 +238,31 @@
     // income last (depends on who works and on family size)
     var inc = planIncome(P, want, cur, thresholds, locks);
     if (inc) { P = inc.plan; targets.push({ where: 'Income', ind: 'C', patches: inc.patches, scenarios: inc.hits, note: inc.note }); }
+    P.members.filter(isActive).forEach(function (m) { setEmploymentAnswers(m, m.age); });
     return { household: P, targets: targets };
+  }
+
+  // The scenario catalog uses legacy job flags. Translate the finished plan to BRVD v0.4 entries.
+  function setEmploymentAnswers(m, memberAge) {
+    if (memberAge < 5) return;
+    var working = Number(m.workind) === 1 || Number(m.jobind) === 1;
+    if (working) {
+      m.occup_s = m.entrep_income > 0 ? 9111 : 5220;
+      m.worked_last_week = m.workind;
+      m.workind = m.entrep_income > 0 ? 2 : 1;
+      delete m.jobind;
+      if (m.workind === 1 && m.wagcshm == null) m.wagcshm = 12000;
+      if (memberAge < 18) {
+        m.work_hrs = m.worked_last_week === 1 ? 2 : 0;
+        m.work_tothrs = m.work_hrs * 2;
+      }
+    } else {
+      m.occup_s = 999;
+      delete m.workind;
+      m.jobind = memberAge < 18 ? 9 : 4;
+      if (m.avail == null) m.avail = 2;
+      if (m.willing == null) m.willing = 2;
+    }
   }
 
   function planIncome(P, want, cur, th, locks) {
@@ -254,7 +278,7 @@
     var cands = [];
     function amt(pci, fs, up) { var x = pci * 12 * fs; return up ? Math.ceil(x) : Math.floor(x); }
     function c(note, list) { cands.push({ note: note, patches: list }); }
-    c('Zero income → food poor', [[e.no, mk(field, 0)]]);
+    c('Low income → food poor', [[e.no, mk(field, earners.length ? Math.max(earners.length, amt(food / 2, A, false)) : 0)]]);
     c('PCI midway between food and poverty thresholds', [[e.no, mk(field, amt((food + pov) / 2, A, true))]]);
     c('PCI well above poverty threshold', [[e.no, mk(field, amt(pov * 2, A, true))]]);
     c('PCI exactly at the food threshold', [[e.no, mk(field, amt(food, A, true))]]);
@@ -268,6 +292,17 @@
     if ([1, 4, 5, 6].indexOf(Number(P.hh.tenur)) >= 0) c('Imputed rent added to income (target) vs ignored (Stata)', [[e.no, mk(field, amt(pov - 500, A, false))], ['hh', { imprnt: 500 * A }]]);
     var best = null;
     cands.forEach(function (cd) {
+      // Divide the proposed annual earnings across all workers before scoring the candidate.
+      // Keeping the total intact preserves threshold and imputed-rent scenarios.
+      if (earners.length) {
+        var incomePatch = cd.patches[0][1], total = incomePatch.wagcshm;
+        if (total < earners.length) return;
+        delete incomePatch.wagcshm;
+        earners.forEach(function (worker, i) {
+          var amount = Math.floor(total / earners.length) + (i < total % earners.length ? 1 : 0);
+          cd.patches.push([worker.no, mk(i % 2 ? 'entrep_income' : 'wagcshm', amount)]);
+        });
+      }
       if (cd.patches.some(function (kp) { return lockedConflict(locks || {}, kp[0], kp[1]); })) return;
       var Q = clone(P);
       cd.patches.forEach(function (kp) { if (kp[0] === 'hh') Object.assign(Q.hh, kp[1]); else Object.assign(Q.members.filter(function (x) { return x.no === kp[0]; })[0], kp[1]); });
@@ -279,7 +314,7 @@
     function mk(f, v) { var o = {}; o[f] = v; if (f === 'wagcshm') { o.other_income = 0; } return o; }
   }
 
-  var api = { plan: plan, hhDefaults: hhDefaults, memberDefaults: memberDefaults, HH_SLOTS: HH_SLOTS, memberCands: memberCands, familyCands: familyCands, gradeFor: gradeFor };
+  var api = { setEmploymentAnswers: setEmploymentAnswers, plan: plan, hhDefaults: hhDefaults, memberDefaults: memberDefaults, HH_SLOTS: HH_SLOTS, memberCands: memberCands, familyCands: familyCands, gradeFor: gradeFor };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SWDIPlanner = api;
 })(this);

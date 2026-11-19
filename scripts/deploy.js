@@ -36,13 +36,12 @@ if (!scriptId) {
   fs.writeFileSync(claspFile, JSON.stringify({ scriptId, rootDir: 'dist' }));
 }
 console.log(clasp('push', '-f'));
-const sha = (process.env.GITHUB_SHA || 'local').slice(0, 7);
-let deployments = [];
-try { deployments = json(clasp('--json', 'list-deployments')); } catch (e) { console.log('Could not list deployments:', e.message); }
+const release = fs.readFileSync(path.join(root, 'dist/Index.html'), 'utf8').match(/id="appRelease"[^>]*>([^<]+)</)[1];
+const deployments = json(clasp('--json', 'list-deployments'));
 const mine = deployments.find(d => (d.description || '').indexOf(DESC) === 0);
 let id;
-if (mine) { clasp('update-deployment', mine.deploymentId, '-d', `${DESC} ${sha}`); id = mine.deploymentId; }
-else { id = json(clasp('--json', 'create-deployment', '-d', `${DESC} ${sha}`)).deploymentId; }
+if (mine) { clasp('update-deployment', mine.deploymentId, '-d', `${DESC} ${release}`); id = mine.deploymentId; }
+else { id = json(clasp('--json', 'create-deployment', '-d', `${DESC} ${release}`)).deploymentId; }
 const url = `https://script.google.com/macros/s/${id}/exec`;
-console.log(`::notice title=Web app deployed::${url}`);
-if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### SWDI Scoring Test Runner deployed\n\n- Web app: ${url}\n- Apps Script project: ${scriptId}\n- Data sheet: https://docs.google.com/spreadsheets/d/${cfg.sheetId}/edit\n`);
+console.log(`::notice title=Web app deployed::${release} — ${url}`);
+if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### SWDI Scoring Test Runner deployed\n\n- App version: ${release}\n- Web app: ${url}\n- Apps Script project: ${scriptId}\n- Data sheet: https://docs.google.com/spreadsheets/d/${cfg.sheetId}/edit\n`);

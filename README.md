@@ -51,11 +51,11 @@ Notes: 4Ps Forward shows **re-scaled** ES/SA (raw ÷ 0.3333 and raw ÷ 0.6669). 
 1. With the DSWD Google account that owns the data sheet, turn on **Google Apps Script API**: <https://script.google.com/home/usersettings>.
 2. On your computer (Node 20+), run `npx @google/clasp login` and approve in the browser with the same account. This writes `~/.clasprc.json` (on Windows: `C:\Users\<you>\.clasprc.json`).
 3. In GitHub, go to **Settings → Secrets and variables → Actions → New repository secret**. Name it `CLASPRC_JSON` and paste the whole content of that file.
-4. Go to **Actions → Test and deploy → Run workflow**, or push to `main`. The first run creates the Apps Script project. The job summary prints its `SCRIPT_ID` and the web-app URL.
+4. Go to **Actions → Test and deploy → Run workflow**, and enable **Create a new Apps Script project on first deployment** for a new project. For an existing project, set `SCRIPT_ID` to its Apps Script project ID. The job summary prints its `SCRIPT_ID` and the web-app URL.
 5. Under **Settings → Secrets and variables → Actions → Variables**, add `SCRIPT_ID` with the printed value. Later runs then update the same project and keep the same URL.
 6. Open the web-app URL once with the owner account and click **Allow** (this grants access to the sheet). Paste the URL in the sheet's `Config` tab and share it with the testers. Access is limited to dswd.gov.ph accounts, and testers do not need access to the sheet.
 
-From then on every push to `main` runs the tests, builds, `clasp push`es and updates the deployment.
+Every push to `main` runs the tests, builds the app, pushes with clasp and updates the deployment. Compare the version next to the web app title with **App version** in the successful deployment summary. The eight-character build ID changes automatically when the web app code or manifest changes.
 
 Notes:
 * `CLASPRC_JSON` is a Google login token. Keep the repo private, and revoke it at <https://myaccount.google.com/permissions> if needed.

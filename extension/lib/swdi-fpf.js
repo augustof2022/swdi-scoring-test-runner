@@ -55,6 +55,8 @@
     var s = String(raw === undefined || raw === null ? '' : raw).trim();
     if (!s || /^(—|-|n\/?a|none selected)$/i.test(s)) return { ok: true, value: '' };
     var yes = /^(yes|true|oo|ticked|checked)$/i.test(s), no = /^(no|false|hindi|not ticked|unchecked)$/i.test(s);
+    if (f.t === 'text') return { ok: true, value: s };
+    if ((f.v === 'jobind' || f.v === 'workind') && (yes || no)) return { ok: true, value: yes ? 1 : 2 };
     if (f.t === 'num') { var v = n(s.replace(/[₱P]\s?/g, '')); return v === null ? { ok: false, reason: 'not a number' } : { ok: true, value: v }; }
     if (f.t === 'chk') { if (yes || s === '1') return { ok: true, value: 1 }; if (no || s === '0' || s === '2') return { ok: true, value: 2 }; var q = n(s); return q === null ? { ok: false, reason: 'expected Yes/No' } : { ok: true, value: q > 0 ? 1 : 2 }; }
     var list = f.t === 'yn' ? LISTS.yn : LISTS[f.list];
@@ -91,6 +93,7 @@
     var srcToNo = {}; roster.forEach(function (r) { srcToNo[r.src] = r.no; });
     var values = { hh: {}, m: {} }, unmapped = [], used = 0, skipped = 0;
     roster.forEach(function (r) { values.m[r.no] = {}; });
+    var oldWorkFlags = {};
     (cap.answers || []).forEach(function (a) {
       var scope = a.scope === 'member' ? 'm' : 'hh', f = byVar[scope + ':' + a.code];
       if (!f || f.v === 'status') { skipped++; return; }
@@ -98,7 +101,19 @@
       var r = mapValue(f, a.value, LISTS);
       if (!r.ok) { unmapped.push({ scope: scope, member: scope === 'm' ? srcToNo[a.memberIndex] : 0, code: a.code, value: a.value, reason: r.reason }); return; }
       if (r.value === '') return;
-      (scope === 'hh' ? values.hh : values.m[srcToNo[a.memberIndex]])[f.v] = r.value; used++;
+      var no = srcToNo[a.memberIndex];
+      if (f.v === 'workind' && /^(yes|no|true|false)$/i.test(String(a.value).trim())) oldWorkFlags[no] = r.value;
+      (scope === 'hh' ? values.hh : values.m[no])[f.v] = r.value; used++;
+    });
+    Object.keys(oldWorkFlags).forEach(function (no) {
+      var rec = values.m[no];
+      if (rec.occup_s == null) return;
+      rec.worked_last_week = oldWorkFlags[no];
+      delete rec.workind;
+      if (Number(rec.occup_s) !== 999) {
+        if (rec.wagcshm > 0 && !rec.entrep_income) rec.workind = 1;
+        if (rec.entrep_income > 0 && !rec.wagcshm) rec.workind = 2;
+      }
     });
     return { fam: cap.hhid || '', date: String(cap.interviewDate || '').slice(0, 10), env: cap.env || '', url: cap.url || '', roster: roster, values: values, unmapped: unmapped, counts: { used: used, skipped: skipped } };
   }

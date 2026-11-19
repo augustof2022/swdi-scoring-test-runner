@@ -54,7 +54,7 @@ details.sec>summary::-webkit-details-marker{display:none}
 .f{display:flex;flex-direction:column;gap:3px;padding:7px 8px;border-radius:7px}
 .f.sug{background:#f4f9ff}.f.chg{background:#fff6e0}
 .f .q{font-size:12.5px}.f .v{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:var(--muted)}
-.f select,.f input[type=number]{border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%}
+.f select,.f input[type=number],.f input[type=text]{border:1px solid var(--line);border-radius:6px;padding:5px 7px;width:100%}
 .f .opts{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px}
 .tg{font-size:11px;color:#1d5fb4}.tg b{font-weight:600}.chgnote{font-size:11px;color:#8a5a00}
 .mcard{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:#fff;overflow:hidden}
@@ -88,6 +88,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
 <body>
 <div class="top">
   <h1>SWDI Scoring Test Runner</h1>
+  <span class="chip" id="appRelease" aria-label="App version">__APP_RELEASE__</span>
   <span class="chip" id="modeChip">loading…</span>
   <span class="sp"></span>
   <span class="chip" id="thChip"></span>
@@ -395,7 +396,11 @@ function planRun() {
 }
 function prefillDefaults() {
   var R = S.run; R.values = { hh: SWDIPlanner.hhDefaults(), m: {} };
-  R.roster.forEach(function (m) { R.values.m[m.no] = SWDIPlanner.memberDefaults({ age: Number(m.age) }); });
+  R.roster.forEach(function (m) {
+    var rec = SWDIPlanner.memberDefaults(m);
+    SWDIPlanner.setEmploymentAnswers(rec, Number(m.age));
+    R.values.m[m.no] = rec;
+  });
 }
 function prefillBlank() { var R = S.run; R.values = { hh: {}, m: {} }; R.roster.forEach(function (m) { R.values.m[m.no] = {}; }); }
 
@@ -403,15 +408,23 @@ function prefillBlank() { var R = S.run; R.values = { hh: {}, m: {} }; R.roster.
 function visible(f, rec, age) {
   if (f.v === 'status') return false;
   if (f.s === 'm' && f.age && !S.showAll && (age < f.age[0] || age > f.age[1])) return false;
+  var specified = rec.occup_s != null && rec.occup_s !== '';
+  var working = specified && Number(rec.occup_s) !== 999;
+  if (f.when === 'has_occupation') return working || (!specified && f.v === 'jstatus' && rec.jstatus != null);
+  if (f.when === 'no_occupation') return Number(rec.occup_s) === 999 || (!specified && f.v !== 'jobind' && Number(rec.workind) === 2 && Number(rec.jobind) !== 1);
+  if (f.when === 'specify_reason') return Number(rec.occup_s) === 999 && [10, 99].includes(Number(rec.jobind));
+  if (f.when === 'childlabor_yes') return Number(rec.childlabor_yes) === 1 || Number(rec.childlabor) > 0;
+  if (f.when === 'minor_schedule') return working || Number(rec.childlabor_yes) === 1 || Number(rec.childlabor) > 0;
+  if (f.when === 'for_pay' || f.when === 'for_profit') {
+    if (!specified) return rec[f.v] != null || rec.workind != null;
+    return working && Number(rec.workind) === (f.when === 'for_pay' ? 1 : 2);
+  }
   if (!f.when || S.showAll) return true;
   var w = f.when, n = function (k) { return num(rec[k]); };
   if (w === 'improved_far') return [11, 12, 13, 14, 21, 31, 41, 51, 61, 71].indexOf(n('water')) >= 0;
   if (w === 'has_toilet') return true;
   if (w === 'educind_yes') return n('educind') === 1;
   if (w === 'educind_no') return n('educind') === 2 || (age >= 19 && n('educind') !== 1);
-  if (w === 'workind_no') return n('workind') === 2;
-  if (w === 'working') return n('workind') === 1 || n('jobind') === 1;
-  if (w === 'not_working') return n('workind') === 2 && n('jobind') !== 1;
   if (w === 'avail_no') return n('avail_med') === 2;
   if (/^skill\d$/.test(w)) return (n('skills_n') || 0) >= Number(w.slice(5));
   if (w === 'gvbind') return SWDI.arr(rec.gvbind).length > 0;
@@ -423,7 +436,8 @@ function ctrl(f, val, key) {
     var L = f.t === 'yn' ? LISTS.yn : LISTS[f.list] || {};
     return '<select data-key="' + key + '" id="' + id + '"><option value=""></option>' + Object.keys(L).map(function (k) { return '<option value="' + k + '"' + (String(val) === k ? ' selected' : '') + '>' + (f.t === 'yn' ? '' : k + ' – ') + esc(L[k]) + '</option>'; }).join('') + '</select>';
   }
-  if (f.t === 'num') return '<input type="number" data-key="' + key + '" value="' + esc(val === null || val === undefined ? '' : val) + '">';
+  if (f.t === 'text') return '<input type="text" data-key="' + key + '" value="' + esc(val ?? '') + '">';
+  if (f.t === 'num') return '<input type="number" step="' + (f.v === 'work_hrs' ? '1' : 'any') + '"' + (f.min === undefined ? '' : ' min="' + f.min + '" max="' + f.max + '"') + ' data-key="' + key + '" value="' + esc(val ?? '') + '">';
   if (f.t === 'chk') return '<label class="small"><input type="checkbox" data-key="' + key + '"' + (num(val) === 1 ? ' checked' : '') + '> Yes / ticked</label>';
   if (f.t === 'multi') {
     var sel = SWDI.arr(val), L2 = LISTS[f.list] || {};
@@ -432,12 +446,19 @@ function ctrl(f, val, key) {
   }
   return '';
 }
+function entryField(f, rec) {
+  if (!rec.occup_s && rec[f.v] != null && (f.v === 'workind' || f.v === 'jobind')) {
+    return Object.assign({}, f, { t: 'yn', when: '', q: f.v === 'workind' ? 'Worked during the past week? (legacy run)' : 'Has a job/business though did not work past week? (legacy run)' });
+  }
+  return f;
+}
 function fieldHTML(f, rec, sug, scope, no, age) {
+  f = entryField(f, rec);
   if (!visible(f, rec, age)) return '';
   var key = (scope === 'hh' ? 0 : no) + '|' + f.v, val = rec[f.v], s = sug ? sug[f.v] : undefined;
   var hasS = S.run.mode === 'Guided' && s !== undefined && s !== '', changed = hasS && String(s) !== String(val === undefined ? '' : val);
   var tg = S.run.targets[key];
-  return '<div class="f' + (changed ? ' chg' : tg ? ' sug' : '') + '"><div class="q">' + esc(f.q) + ' <span class="v">' + f.v + '</span></div>' + ctrl(f, val, key) +
+  return '<div class="f' + (changed ? ' chg' : tg ? ' sug' : '') + '"><div class="q">' + esc(f.q) + ' <span class="v">' + f.v + '</span></div>' + ctrl(f, val === undefined || val === '' ? f.defaultValue : val, key) +
     (tg ? '<div class="tg">targets: ' + tg.filter(function (x, i, a) { return a.indexOf(x) === i && !/^Z\.|\.f\./.test(x); }).slice(0, 4).map(function (x) { var d = SC.filter(function (s) { return s.id === x; })[0]; return '<span class="tchip" title="' + esc(x) + '">' + esc(d ? d.desc : x) + '</span>'; }).join('') + '</div>' : '') +
     (changed ? '<div class="chgnote">changed from suggested: ' + esc(displayVal(f, s)) + '</div>' : '') + '</div>';
 }
@@ -480,12 +501,31 @@ function tabAnswers() {
   body.addEventListener('change', function (e) {
     var key = e.target.dataset.key; if (!key) return;
     var parts = key.split('|'), no = Number(parts[0]), v = parts[1], rec = no === 0 ? R.values.hh : R.values.m[no];
+    if (!e.target.reportValidity()) return;
+    var previous = rec[v];
     if (e.target.dataset.opt) {
       var sel = SWDI.arr(rec[v]), o = Number(e.target.dataset.opt);
       if (e.target.checked && sel.indexOf(o) < 0) sel.push(o); if (!e.target.checked) sel = sel.filter(function (x) { return x !== o; });
       rec[v] = sel.sort(function (a, b) { return a - b; }).join(';');
     } else if (e.target.type === 'checkbox') rec[v] = e.target.checked ? 1 : 2;
-    else rec[v] = e.target.value === '' ? '' : Number(e.target.value);
+    else rec[v] = e.target.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value);
+    if (v === 'occup_s' && (!previous || Number(previous) === 999 || !rec[v] || rec[v] === 999)) {
+      ['jobind', 'jobind_specify', 'avail', 'willing', 'workind', 'worked_last_week', 'work_hrs', 'work_tothrs', 'jstatus'].forEach(function (k) { delete rec[k]; });
+      if (!rec[v] || rec[v] === 999) { delete rec.wagcshm; delete rec.entrep_income; }
+      else if (R.mode === 'Guided') {
+        rec.workind = rec.entrep_income > 0 ? 2 : 1;
+        rec.worked_last_week = 1;
+        rec.jstatus = 1;
+      }
+    }
+    if (rec.occup_s && Number(rec.occup_s) !== 999 && (v === 'workind' || v === 'occup_s') && rec.workind != null) {
+      if (Number(rec.workind) !== 1) delete rec.wagcshm;
+      else if (R.mode === 'Guided' && rec.wagcshm == null) rec.wagcshm = 12000;
+      if (Number(rec.workind) !== 2) delete rec.entrep_income;
+      else if (R.mode === 'Guided' && rec.entrep_income == null) rec.entrep_income = 12000;
+    }
+    if (v === 'childlabor_yes' && rec[v] !== 1) { delete rec.childlabor; delete rec.indust; }
+    if (v === 'jobind' && ![10, 99].includes(rec[v])) delete rec.jobind_specify;
     S.dirty = true;
     var y = window.scrollY; renderRun(); window.scrollTo(0, y);
   });
@@ -508,10 +548,10 @@ function tabExpected() {
     var a = t.indicators[d.code], b = s.indicators[d.code], conf = both.divergent.indexOf(d.code) >= 0;
     html += '<div class="ind"><div class="h"><b>' + d.code + '</b><span>' + esc(d.name) + '</span><span class="pill">' + esc(d.cov) + ' · ' + esc(d.agg) + ' · w ' + d.w.toFixed(4) + '</span>' +
       '<div class="lv">' + (conf ? '<span class="pill v-STATA" title="' + esc(b.why) + '">Stata: ' + lvlTxt(b.level) + '</span>' : '') + '<span class="small muted">weighted ' + fmt(a.weighted, 5) + '</span><span class="big">' + lvlTxt(a.level) + '</span></div></div>' +
-      '<div class="why"><div class="fam">' + esc(a.why) + '</div>' + (a.members ? '<table class="mtab">' + a.members.map(function (m) {
+      '<div class="why">' + (a.members ? '<table class="mtab"><tr><th>Member (age)</th><th>Expected level</th><th>Answer and criterion</th></tr>' + a.members.map(function (m) {
         return '<tr' + (m.level === null ? ' class="ex"' : '') + '><td style="width:200px">M' + m.no + ' ' + esc(m.name) + ' (' + m.age + ')</td><td style="width:70px"><b>' + (m.level === null ? 'excluded' : 'L' + m.level) + '</b></td><td>' + esc(m.why) + '</td></tr>';
-      }).join('') + '</table>' : '') + (conf ? '<div class="small" style="color:#8a5a00;margin-top:4px">Stata as written → ' + lvlTxt(b.level) + ': ' + esc(b.why) + (STATA_NOTES[d.code] ? ' — ' + esc(STATA_NOTES[d.code]) : '') + '</div>' : '') + '</div>' +
-      '<details class="crit"><summary class="small muted" style="cursor:pointer">Criteria</summary><ul>' + [1, 2, 3].map(function (l) { return '<li' + (Math.round(a.level) === l ? ' style="font-weight:600"' : '') + '>Level ' + l + ': ' + esc(d.criteria[l]) + '</li>'; }).join('') + '</ul></details></div>';
+      }).join('') + '</table>' : '') + '<div class="fam">' + esc(a.why) + '</div>' + (conf ? '<div class="small" style="color:#8a5a00;margin-top:4px">Stata as written → ' + lvlTxt(b.level) + ': ' + esc(b.why) + (STATA_NOTES[d.code] ? ' — ' + esc(STATA_NOTES[d.code]) : '') + '</div>' : '') + '</div>' +
+      '<details class="crit"><summary class="small muted" style="cursor:pointer">Criteria</summary><ul>' + [1, 2, 3].map(function (l) { return '<li' + (a.level === l ? ' style="font-weight:600"' : '') + '>Level ' + l + ': ' + esc(d.criteria[l]) + '</li>'; }).join('') + '</ul></details></div>';
   });
   html += '<div class="sticky"><button class="btn pri" id="saveExp">Save run</button><button class="btn" id="goVer">Next: verify scores →</button></div>';
   $('#tabBody').innerHTML = html;
@@ -618,6 +658,7 @@ function buildPayload() {
   var entries = [];
   function addEntries(scope, no, rec, sug, mname) {
     FIELDS.filter(function (f) { return f.s === scope && f.v !== 'status'; }).forEach(function (f) {
+      f = entryField(f, rec);
       var v = rec[f.v], sv = sug ? sug[f.v] : undefined, key = no + '|' + f.v;
       if ((v === undefined || v === '') && (sv === undefined || sv === '')) return;
       entries.push({ Key: 'x|' + no + '|' + f.v, 'Member #': no, Member: mname, Section: f.sec, Variable: f.v, Question: f.q, Value: v === undefined ? '' : v, Meaning: displayVal(f, v),
