@@ -134,6 +134,10 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
 <script>
 var DEMO = /*DEMO*/null;
 var IND = SWDI.INDICATORS, FIELDS = SWDIFields.FIELDS, LISTS = SWDIFields.LISTS, SC = SWDIScenarios;
+// Keep BRVD activity codes; add an explicit no-activity option for the SWDI App's single-select question.
+LISTS.childlabor = Object.assign({ 0: 'NONE' }, LISTS.childlabor);
+var childActivityField = FIELDS.filter(function (f) { return f.v === 'childlabor'; })[0];
+if (childActivityField) childActivityField.q = 'Has the member been engaged in any of the following work and activities?';
 var TOTALS = [{ code: 'ES', name: 'Raw ES score' }, { code: 'SA', name: 'Raw SA score' }, { code: 'TOTAL', name: 'TOTAL SWDI score' }, { code: 'LOWB', name: 'LOWB (1-3)' }];
 var STATUSES = ['Draft', 'Entering in SWDI App', 'Synced — verify scores', 'Verified in SWDI App', 'Verified in 4Ps Forward', 'Blocked'];
 var STATA_NOTES = { A: 'BRVD Scoring Rules rows 8 and 10: the diploma test uses the recorded gradel code, and the family average includes members aged 18 or older.', C: 'Stata: family size = all captured members − OFW; under-15 income counted; no imputed rent.',
@@ -477,14 +481,23 @@ function prefillBlank() { var R = S.run; R.values = { hh: {}, m: {} }; R.roster.
 // ---------- answers ----------
 function visible(f, rec, age) {
   if (f.v === 'status') return false;
+  // Employment follows the SWDI mobile age/skip logic, including when "Show all" is enabled.
+  if (f.sec === 'Employment') {
+    if (f.v === 'childlabor_yes') return false; // legacy storage field; activity selection is now the only question
+    if (['childlabor', 'indust', 'work_hrs', 'work_tothrs'].indexOf(f.v) >= 0) {
+      if (age < 5 || age > 17) return false;
+      if (f.v === 'childlabor') return true;
+      return num(rec.childlabor) !== null && num(rec.childlabor) > 0;
+    }
+    if (age < 15) return false;
+  }
   if (f.s === 'm' && f.age && !S.showAll && (age < f.age[0] || age > f.age[1])) return false;
   var specified = rec.occup_s != null && rec.occup_s !== '';
   var working = specified && Number(rec.occup_s) !== 999;
   if (f.when === 'has_occupation') return working || (!specified && f.v === 'jstatus' && rec.jstatus != null);
-  if (f.when === 'no_occupation') return Number(rec.occup_s) === 999 || (!specified && f.v !== 'jobind' && Number(rec.workind) === 2 && Number(rec.jobind) !== 1);
-  if (f.when === 'specify_reason') return Number(rec.occup_s) === 999 && [10, 99].includes(Number(rec.jobind));
-  if (f.when === 'childlabor_yes') return Number(rec.childlabor_yes) === 1 || Number(rec.childlabor) > 0;
-  if (f.when === 'minor_schedule') return working || Number(rec.childlabor_yes) === 1 || Number(rec.childlabor) > 0;
+  if (f.when === 'no_occupation') return specified && Number(rec.occup_s) === 999;
+  if (f.when === 'specify_reason') return specified && Number(rec.occup_s) === 999 && [10, 99].includes(Number(rec.jobind));
+  if (f.when === 'childlabor_yes' || f.when === 'minor_schedule') return num(rec.childlabor) !== null && num(rec.childlabor) > 0;
   if (f.when === 'for_pay' || f.when === 'for_profit') {
     if (!specified) return rec[f.v] != null || rec.workind != null;
     return working && Number(rec.workind) === (f.when === 'for_pay' ? 1 : 2);
@@ -526,6 +539,7 @@ function fieldHTML(f, rec, sug, scope, no, age) {
   f = entryField(f, rec);
   if (!visible(f, rec, age)) return '';
   var key = (scope === 'hh' ? 0 : no) + '|' + f.v, val = rec[f.v], s = sug ? sug[f.v] : undefined;
+  if (f.v === 'childlabor' && (val === '' || val === undefined || val === null) && Number(rec.childlabor_yes) === 2) val = 0;
   var hasS = S.run.mode === 'Guided' && s !== undefined && s !== '', changed = hasS && String(s) !== String(val === undefined ? '' : val);
   var tg = S.run.targets[key];
   return '<div class="f' + (changed ? ' chg' : tg ? ' sug' : '') + '"><div class="q">' + esc(f.q) + ' <span class="v">' + f.v + '</span></div>' + ctrl(f, val === undefined || val === '' ? f.defaultValue : val, key) +
@@ -580,7 +594,7 @@ function tabAnswers() {
     } else if (e.target.type === 'checkbox') rec[v] = e.target.checked ? 1 : 2;
     else rec[v] = e.target.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value);
     if (v === 'occup_s' && (!previous || Number(previous) === 999 || !rec[v] || rec[v] === 999)) {
-      ['jobind', 'jobind_specify', 'avail', 'willing', 'workind', 'worked_last_week', 'work_hrs', 'work_tothrs', 'jstatus'].forEach(function (k) { delete rec[k]; });
+      ['jobind', 'jobind_specify', 'avail', 'willing', 'workind', 'worked_last_week', 'jstatus'].forEach(function (k) { delete rec[k]; });
       if (!rec[v] || rec[v] === 999) { delete rec.wagcshm; delete rec.entrep_income; }
       else if (R.mode === 'Guided') {
         rec.workind = rec.entrep_income > 0 ? 2 : 1;
@@ -595,7 +609,14 @@ function tabAnswers() {
       else if (R.mode === 'Guided' && rec.entrep_income == null) rec.entrep_income = 12000;
     }
     if (v === 'orgmem' && rec[v] !== 1) { delete rec.orgact1; delete rec.orgofficer1; }
-    if (v === 'childlabor_yes' && rec[v] !== 1) { delete rec.childlabor; delete rec.indust; }
+    if (v === 'childlabor') {
+      // Maintain the legacy boolean for already-scored runs while the single-select activity is authoritative.
+      if (rec.childlabor === '') delete rec.childlabor_yes;
+      else rec.childlabor_yes = Number(rec.childlabor) > 0 ? 1 : 2;
+      if (Number(rec.childlabor) === 0 || rec.childlabor === '') {
+        delete rec.indust; delete rec.work_hrs; delete rec.work_tothrs;
+      }
+    }
     if (v === 'jobind' && ![10, 99].includes(rec[v])) delete rec.jobind_specify;
     S.dirty = true;
     var y = window.scrollY; renderRun(); window.scrollTo(0, y);
