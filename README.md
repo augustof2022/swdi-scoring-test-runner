@@ -76,6 +76,8 @@ npm run build       # dist/ for clasp + preview/index.html (stand-alone demo, da
 
 Indicator V uses the BRVD v0.4 Scoring Rules Level 2 criterion (“any member”). Two or more members with no officer and fewer than two participants score Level 2. The review comment on row 112 proposes exactly one member, which leaves that case unassigned.
 
+Indicator W grades each eligible child against the requirements for that age. In mixed households the tester uses the lowest child level for the policy result. This gives Level 1 precedence when one child meets only one requirement and another meets more. The BRVD row 123 review describes overlapping Level 1 and Level 2 cases. The Stata comparison retains the tester's highest-child assumption.
+
 ## Open rules to confirm with SCMD
 
 These show up as **Needs DSWD confirmation** or `N/A CHECK`:

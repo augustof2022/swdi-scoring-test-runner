@@ -203,6 +203,17 @@ function scenarioStatus(c) {
 }
 
 // ---------- run model ----------
+var testInstances = ['Newlogic Preprod', 'DSWD Preprod Load Test'];
+function instanceName(value) {
+  if (value === 'Preprod') return testInstances[0];
+  if (value === 'Preprod load test') return testInstances[1];
+  return value || '';
+}
+function instanceOptions(selected) {
+  return testInstances.map(function (name) {
+    return '<option' + (name === instanceName(selected) ? ' selected' : '') + '>' + name + '</option>';
+  }).join('');
+}
 function newRun() {
   return { id: '', fam: '', mode: 'Guided', date: today(), status: 'Draft', notes: '', food: S.data.config.food_threshold, pov: S.data.config.poverty_threshold, roster: [{ no: 1, name: '', age: '', sex: 2, reln: 1, status: 1 }],
     values: { hh: {}, m: {} }, suggested: { hh: {}, m: {} }, targets: {}, obs: { swdi: {}, fpf: {}, mode: { swdi: 'level', fpf: 'level' } }, planned: false, env: '', fpfUrl: '', rev: null, createdBy: '', savedBy: '', importNote: '' };
@@ -242,7 +253,7 @@ function renderNav() {
   var runs = (who === 'mine' ? mine : all).filter(function (r) {
     if (S.openOnly && finished(r)) return false;
     if (!q) return true;
-    return [r['Run ID'], r['Family ID (HHID)'], r['Household head'], r['Created by'], r['Last saved by'], r.Tester, r.Status, r.Environment].join(' ').toLowerCase().indexOf(q) >= 0;
+    return [r['Run ID'], r['Family ID (HHID)'], r['Household head'], r['Created by'], r['Last saved by'], r.Tester, r.Status, instanceName(r.Environment)].join(' ').toLowerCase().indexOf(q) >= 0;
   });
   $$('#runWho button').forEach(function (b) { b.classList.toggle('on', b.dataset.w === who); b.disabled = !me() && b.dataset.w === 'mine'; });
   var head = !me() ? '<p class="small muted" style="padding:0 6px">Type your name in <b>Tester</b> (top right) to see “My runs”.</p>' : '';
@@ -256,7 +267,7 @@ function renderNav() {
         '<div class="fam">' + esc(r['Family ID (HHID)'] || '—') + '</div>' +
         '<div class="s2">' + esc(id) + (r['Household head'] ? ' · ' + esc(r['Household head']) : '') + '</div>' +
         '<div class="s">' + progBar(r.Progress) + '<span>' + esc(r.Status || '') + '</span>' + (pass ? '<span class="pill v-PASS">' + pass + ' pass</span>' : '') + (bad ? '<span class="pill v-FAIL">' + bad + ' issue</span>' : '') +
-        (who === 'all' ? '<span>' + esc(shortWho(ownerOf(r))) + '</span>' : '') + (r.Environment ? '<span class="pill">' + esc(r.Environment) + '</span>' : '') + '</div></button>';
+        (who === 'all' ? '<span>' + esc(shortWho(ownerOf(r))) + '</span>' : '') + (r.Environment ? '<span class="pill">' + esc(instanceName(r.Environment)) + '</span>' : '') + '</div></button>';
     }).join('') + empty;
   if ($('#showAllRuns')) $('#showAllRuns').onclick = function (e) { e.preventDefault(); S.who = 'all'; store('who', 'all'); renderNav(); };
   $$('.navbtn[data-view]').forEach(function (b) { b.classList.toggle('on', S.view === b.dataset.view); });
@@ -344,7 +355,7 @@ function tabRoster() {
     '<label class="field">Interview date<input id="rDate" type="date" value="' + esc(R.date) + '"></label>' +
     '<label class="field">Food threshold (monthly per capita, ₱)<input id="rFood" type="number" step="0.01" value="' + esc(R.food) + '" style="min-width:120px"></label>' +
     '<label class="field">Poverty threshold (monthly per capita, ₱)<input id="rPov" type="number" step="0.01" value="' + esc(R.pov) + '" style="min-width:120px"></label>' +
-    '<label class="field">4Ps Forward environment<select id="rEnv"><option value=""></option>' + ['Preprod', 'Preprod load test'].map(function (e) { return '<option' + (R.env === e ? ' selected' : '') + '>' + e + '</option>'; }).join('') + '</select></label>' +
+    '<label class="field">Test instance<select id="rEnv"><option value="">Unspecified</option>' + instanceOptions(R.env) + '</select></label>' +
     '<div class="field">Mode<div class="seg" id="rMode"><button data-m="Guided" class="' + (R.mode === 'Guided' ? 'on' : '') + '">Guided</button><button data-m="Record" class="' + (R.mode === 'Record' ? 'on' : '') + '">Record</button></div></div></div>' +
     '<p class="small muted" style="margin:10px 0 0">Use the SWDI IS food and poverty thresholds for this household\'s province (urban/rural) and income reference period. ' + (R.mode === 'Guided' ? '<b>Guided:</b> after the roster, the web app proposes the values to enter for each member and the household, aimed at scenarios not yet covered by any run (ages decide which scenarios fit).' :
       '<b>Record:</b> enter whatever you put in the SWDI App. The engine grades it and coverage is credited automatically.') + '</p></div>' +
@@ -539,7 +550,7 @@ function tabAnswers() {
 
 // ---------- expected ----------
 function memberResult(m) {
-  return m.contribution || (m.level === null ? 'excluded' : 'L' + m.level);
+  return m.contribution || (m.level === null ? (m.applicable ? 'unscored' : 'excluded') : 'L' + m.level);
 }
 function memberTable(a, code) {
   if (!a.members) return '';
@@ -595,6 +606,35 @@ function judgeOne(p, code, both) {
   var obs = O.mode[p] === 'weighted' ? SWDI.interpretObserved(code, raw, 'weighted') : raw;
   return verdict(code, obs, t.indicators[code].level, s.indicators[code].level);
 }
+function stataRemark(p, code, both) {
+  var raw = S.run.obs[p][code], def = IND.find(function (d) { return d.code === code; });
+  var t = both.target, s = both.stata;
+  function explain(d) {
+    var target = t.indicators[d.code], stata = s.indicators[d.code];
+    function evidence(r) {
+      return (r.members || []).map(function (m) {
+        return 'M' + m.no + ' ' + m.name + ' (' + m.age + '): ' + m.why + ' → ' + memberResult(m);
+      }).join(' · ');
+    }
+    return 'Policy level ' + lvlTxt(target.level) + '. ' + target.why + '\n' + evidence(target) +
+      '\nBRVD Stata comparison level ' + lvlTxt(stata.level) + '. ' + stata.why +
+      (STATA_NOTES[d.code] ? ' ' + STATA_NOTES[d.code] : '') + (stata.members ? '\n' + evidence(stata) : '');
+  }
+  var observed = 'Observed ' + (p === 'swdi' ? 'SWDI App' : '4Ps Forward') + ' score: ' + raw;
+  if (def) return observed + (S.run.obs.mode[p] === 'weighted' ? ' (weighted)' : ' (level)') + '.\n' + explain(def);
+  var tt = totalsOf(t), st = totalsOf(s), key = code;
+  if ((code === 'ES' || code === 'SA') && Math.abs(num(raw) - tt[code + '_R']) < Math.abs(num(raw) - tt[code])) key += '_R';
+  var changed = IND.filter(function (d) {
+    return (code !== 'ES' && code !== 'SA' || code === d.dim) && both.divergent.indexOf(d.code) >= 0;
+  });
+  return observed + '. Policy: ' + fmt(tt[key], 5) + '. BRVD Stata comparison: ' + fmt(st[key], 5) + '.\n' +
+    changed.map(function (d) { return d.code + ' — ' + d.name + '\n' + explain(d); }).join('\n');
+}
+function verdictCell(p, code, both) {
+  var result = judgeOne(p, code, both);
+  return pill(result) + (result === 'STATA RULE' ? '<details class="small" open><summary>Remarks</summary><div style="white-space:pre-line">' +
+    esc(stataRemark(p, code, both)) + '</div></details>' : '');
+}
 function tabVerify() {
   var R = S.run, both = expectedFor(R), t = both.target, tt = totalsOf(t), O = R.obs;
   function col(p, title) {
@@ -610,17 +650,17 @@ function tabVerify() {
         return '<tr style="background:#f7f9fc"><td><b>' + d.name + '</b></td><td class="num">' + fmt(tt[d.code], 5) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + '</table></div>';
   }
-  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> = the platform follows the BRVD Stata command as written; <b>ROUNDING</b> = it rounded a family average.</div>' +
+  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison. The remarks show the responses and both calculations; <b>ROUNDING</b> = it rounded a family average.</div>' +
     '<div class="row noprint" style="margin-bottom:10px"><button class="btn sm" id="goImport">Import 4Ps Forward scores from the capture extension…</button>' + (R.fpfUrl ? '<a class="small" target="_blank" rel="noopener" href="' + esc(R.fpfUrl) + '">Open in 4Ps Forward ↗</a>' : '') + '</div>' +
     '<div class="grid2">' + col('swdi', 'SWDI App') + col('fpf', '4Ps Forward') + '</div>' +
     '<div class="card"><label class="field">Notes<textarea id="vNotes">' + esc(R.notes) + '</textarea></label></div>' +
     '<div class="sticky"><button class="btn pri" id="saveVer">Save results</button><span class="small muted">Saving sets the status from what you filled in.</span></div>';
   $('#goImport').onclick = function () { S.view = 'import'; route(); };
-  function judgeAll() { ['swdi', 'fpf'].forEach(function (p) { IND.concat(TOTALS).forEach(function (d) { var c = $('#v' + p + d.code); if (c) c.innerHTML = pill(judgeOne(p, d.code, both)); }); }); }
+  function judgeAll() { ['swdi', 'fpf'].forEach(function (p) { IND.concat(TOTALS).forEach(function (d) { var c = $('#v' + p + d.code); if (c) c.innerHTML = verdictCell(p, d.code, both); }); }); }
   judgeAll();
   var body = $('#tabBody');
   body.addEventListener('input', function (e) {
-    if (e.target.classList.contains('vin')) { O[e.target.dataset.p][e.target.dataset.c] = e.target.value; S.dirty = true; var c = $('#v' + e.target.dataset.p + e.target.dataset.c); c.innerHTML = pill(judgeOne(e.target.dataset.p, e.target.dataset.c, both)); }
+    if (e.target.classList.contains('vin')) { O[e.target.dataset.p][e.target.dataset.c] = e.target.value; S.dirty = true; var c = $('#v' + e.target.dataset.p + e.target.dataset.c); c.innerHTML = verdictCell(e.target.dataset.p, e.target.dataset.c, both); }
     if (e.target.id === 'vNotes') { R.notes = e.target.value; S.dirty = true; }
   });
   body.addEventListener('change', function (e) { if (e.target.type === 'radio') { O.mode[e.target.name.slice(1)] = e.target.value; renderRun(); } });
@@ -700,7 +740,7 @@ function buildPayload() {
   var run = { 'Run ID': R.id, 'Family ID (HHID)': R.fam, Mode: R.mode, Tester: tester(), 'Interview date': R.date, 'Food threshold': R.food, 'Poverty threshold': R.pov, Status: R.status, Members: R.roster.length,
     'Expected total (target)': t.total, 'Expected LOWB': t.lowb, 'Stata total': s.total, 'Stata LOWB': s.lowb, 'Rule conflicts': both.divergent.join(', '), 'N/A indicators': t.na.join(', '),
     'SWDI App total': R.obs.swdi.TOTAL || '', '4Ps Forward total': R.obs.fpf.TOTAL || '', 'Checks passed': passN, 'Checks not passed': badN, 'Scenarios exercised': t.branches.length, Notes: R.notes,
-    'Household head': householdHead(R), Environment: R.env || '', '4Ps Forward link': R.fpfUrl || '', Progress: progressOf(R).text };
+    'Household head': householdHead(R), Environment: instanceName(R.env), '4Ps Forward link': R.fpfUrl || '', Progress: progressOf(R).text };
   return { run: run, roster: roster, entries: entries, scores: scores, baseRevision: R.id ? R.rev : null };
 }
 function saveRun() {
@@ -720,7 +760,7 @@ function openRun(id, tab, then) {
   var meta = (S.data.runs || []).filter(function (r) { return r['Run ID'] === id; })[0]; if (!meta) return;
   call('getRun', [id], function (j) {
     var d = JSON.parse(j), R = newRun();
-    R.id = id; R.rev = meta.Revision === '' || meta.Revision === undefined ? null : Number(meta.Revision); R.createdBy = ownerOf(meta); R.savedBy = meta['Last saved by'] || ''; R.env = meta.Environment || ''; R.fpfUrl = meta['4Ps Forward link'] || '';
+    R.id = id; R.rev = meta.Revision === '' || meta.Revision === undefined ? null : Number(meta.Revision); R.createdBy = ownerOf(meta); R.savedBy = meta['Last saved by'] || ''; R.env = instanceName(meta.Environment); R.fpfUrl = meta['4Ps Forward link'] || '';
     R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
     var inv = function (list, label) { var L = LISTS[list]; var k = Object.keys(L).filter(function (x) { return L[x] === label; })[0]; return k ? Number(k) : 1; };
     R.roster = d.roster.sort(function (a, b) { return a['Member #'] - b['Member #']; }).map(function (r) { return { no: Number(r['Member #']), name: r.Name, age: Number(r.Age), sex: inv('sex', r.Sex), reln: inv('reln', r.Relationship), status: inv('memberstatus', r['Member status']) }; });
@@ -754,7 +794,7 @@ function rosterLine(list) { return list.map(function (m) { return esc(m.name || 
 function applyCap(R, cap) {
   var o = SWDIFPF.observedFromCapture(cap), notes = [];
   R.obs.fpf = Object.assign({}, o.values); R.obs.mode.fpf = 'level';
-  if (cap.env) R.env = cap.env; if (cap.url) R.fpfUrl = cap.url;
+  if (cap.env) R.env = instanceName(cap.env); if (cap.url) R.fpfUrl = cap.url;
   if (STATUSES.indexOf(R.status) < 2) R.status = 'Synced — verify scores';
   notes.push('4Ps Forward scores filled from the capture of ' + esc(new Date(cap.capturedAt).toLocaleString()) + (cap.status ? ' (assessment status: ' + esc(cap.status) + ')' : '') + '. Check them against the screen, then save.');
   if (o.partial) notes.push('4Ps Forward computed only ' + o.partial.n + ' of ' + o.partial.of + ' indicators; ' + o.missing.join(', ') + ' are set to N/A — a FAIL there means the expected result has a level.');
@@ -768,7 +808,7 @@ function applyCap(R, cap) {
 }
 function createFromCap(cap) {
   var x = SWDIFPF.captureToRun(cap, FIELDS, LISTS), R = newRun();
-  R.mode = 'Record'; R.fam = x.fam; R.date = x.date || today(); R.env = x.env; R.fpfUrl = x.url;
+  R.mode = 'Record'; R.fam = x.fam; R.date = x.date || today(); R.env = instanceName(x.env); R.fpfUrl = x.url;
   R.roster = x.roster.map(function (r) { return { no: r.no, name: r.name, age: r.age, sex: r.sex, reln: r.reln, status: r.status }; });
   R.values = x.values; R.roster.forEach(function (m) { R.suggested.m[m.no] = {}; if (!R.values.m[m.no]) R.values.m[m.no] = {}; });
   applyCap(R, cap);
@@ -788,8 +828,9 @@ function renderImport() {
     return;
   }
   var sc = cap.score || {}, ind = sc.indicators || {}, fam = normFam(cap.hhid);
-  var matches = (S.data.runs || []).filter(function (r) { return fam && normFam(r['Family ID (HHID)']) === fam; });
-  var openUnsaved = S.run && !S.run.id && fam && normFam(S.run.fam) === fam;
+  function sameInstance(env) { return !env || !cap.env || instanceName(env) === instanceName(cap.env); }
+  var matches = (S.data.runs || []).filter(function (r) { return fam && normFam(r['Family ID (HHID)']) === fam && sameInstance(r.Environment); });
+  var openUnsaved = S.run && !S.run.id && fam && normFam(S.run.fam) === fam && sameInstance(S.run.env);
   html += '<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">Household ' + esc(cap.hhid || '(ID not found — type it below)') + '</h3><div class="small muted">' + esc([cap.env, cap.period, cap.status, cap.source].filter(Boolean).join(' · ')) + ' · captured ' + esc(new Date(cap.capturedAt).toLocaleString()) + '</div></div>' +
     '<div><span class="big">' + fmt(sc.total, 2) + '</span> <span class="pill">Level ' + esc(sc.lowb || '?') + '</span>' + (sc.partial ? ' <span class="pill v-STATA">Partial — ' + sc.partial.n + ' of ' + sc.partial.of + '</span>' : '') + '<div class="small muted">ES ' + fmt(sc.es_rescaled) + ' · SA ' + fmt(sc.sa_rescaled) + ' (re-scaled)</div></div></div>' +
     (!cap.hhid ? '<label class="field" style="margin-top:8px">Family ID<input id="capFam" placeholder="13-digit household ID"></label>' : '') +
@@ -798,9 +839,9 @@ function renderImport() {
     ((cap.members || []).length ? '<p class="small">Members: ' + rosterLine(cap.members) + '</p>' : '') + '</details></div>';
   html += '<div class="card"><h3>What to do with it</h3>';
   if (openUnsaved) html += '<div class="row" style="margin-bottom:8px"><button class="btn pri" id="capToOpen">Fill the run you are editing (not saved yet)</button></div>';
-  if (matches.length) html += '<p class="small muted">Runs for this household:</p><table><tr><th>Run</th><th>Created by</th><th>Status</th><th></th></tr>' + matches.map(function (r) {
-    return '<tr><td><b>' + esc(r['Run ID']) + '</b> ' + esc(r['Household head'] || '') + '</td><td>' + esc(ownerOf(r)) + '</td><td>' + esc(r.Status || '') + '</td><td><button class="btn sm pri" data-attach="' + esc(r['Run ID']) + '">Fill its 4Ps Forward scores</button></td></tr>'; }).join('') + '</table>';
-  else html += '<p class="small muted">No saved run has this Family ID' + (fam ? '' : ' (no ID in the capture)') + '.</p>';
+  if (matches.length) html += '<p class="small muted">Runs for this household:</p><table><tr><th>Run</th><th>Test instance</th><th>Created by</th><th>Status</th><th></th></tr>' + matches.map(function (r) {
+    return '<tr><td><b>' + esc(r['Run ID']) + '</b> ' + esc(r['Household head'] || '') + '</td><td>' + esc(instanceName(r.Environment) || 'Unspecified') + '</td><td>' + esc(ownerOf(r)) + '</td><td>' + esc(r.Status || '') + '</td><td><button class="btn sm pri" data-attach="' + esc(r['Run ID']) + '">Fill its 4Ps Forward scores</button></td></tr>'; }).join('') + '</table>';
+  else html += '<p class="small muted">No matching run for this household and test instance' + (fam ? '' : ' (no ID in the capture)') + '.</p>';
   html += '<div class="row" style="margin-top:12px">' + ((cap.answers || []).length ? '<button class="btn" id="capNew">Create a Record-mode run from this capture</button>' : '<span class="small muted">Capture with “Include roster and answers” to create a Record-mode run from it.</span>') +
     '<button class="btn sm" id="capClear">Discard capture</button></div></div>';
   $('#main').innerHTML = html;
@@ -824,8 +865,15 @@ var SEV = { 'FAIL': 1, 'STATA RULE': 2, 'ROUNDING': 3, 'N/A CHECK': 4 };
 function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function weekRange(offset) { var d = new Date(); var day = (d.getDay() + 6) % 7; var mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - day + 7 * offset); var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6); return [ymd(mon), ymd(sun)]; }
 function runDate(r) { return String(r['Interview date'] || r['Updated at'] || r['Created at'] || '').slice(0, 10); }
-function buildReport(from, to, kind) {
-  var runsAll = S.data.runs || [], scoresAll = S.data.scores || [];
+function buildReport(from, to, kind, instance) {
+  var runsAll = (S.data.runs || []).filter(function (r) {
+    var name = instanceName(r.Environment);
+    if (instance === 'both') return testInstances.indexOf(name) >= 0;
+    if (instance === 'unspecified') return !name;
+    return !instance || name === instance;
+  });
+  var selectedIds = new Set(runsAll.map(function (r) { return r['Run ID']; }));
+  var scoresAll = (S.data.scores || []).filter(function (s) { return selectedIds.has(s['Run ID']); });
   var inP = function (r) { var d = runDate(r); return (!from || d >= from) && (!to || d <= to); };
   var runs = runsAll.filter(inP), ids = {}; runs.forEach(function (r) { ids[r['Run ID']] = 1; });
   var scores = scoresAll.filter(function (s) { return ids[s['Run ID']]; });
@@ -839,7 +887,7 @@ function buildReport(from, to, kind) {
       if (!v[1] || v[1] === 'PASS') return;
       var k = s.Code + '|' + v[1], g = groups[k] = groups[k] || { code: s.Code, name: s.Indicator, verdict: v[1], items: [], platforms: {} };
       g.platforms[v[0]] = 1;
-      g.items.push({ run: s['Run ID'], platform: v[0], expected: s['Expected level (target)'], stata: s['Stata level'], observed: v[2], why: s['How graded (target)'], stataWhy: s['Stata as written'] });
+      g.items.push({ run: s['Run ID'], platform: v[0], expected: s['Expected level (target)'], stata: s['Stata level'], observed: v[2], why: s['How graded (target)'], stataWhy: s['Stata as written'], memberEvidence: s['Member breakdown'] });
     });
     var a = num(s['SWDI App observed (level)']), b = num(s['4Ps Forward observed (level)']);
     if (a !== null && b !== null && Math.abs(a - b) > 0.01) {
@@ -868,15 +916,17 @@ function buildReport(from, to, kind) {
     var c = 0; scoresAll.forEach(function (x) { if (String(x['Scenarios exercised'] || '').indexOf('|' + s.id + '|') >= 0) c++; }); return { s: s, runs: c };
   });
   var naChecks = exe.filter(function (s) { return finalVerdict(s) === 'N/A CHECK'; }).length;
-  return { kind: kind, from: from, to: to, runs: runs, runsAll: runsAll, exe: exe, count: count, findings: findings, perInd: perInd, newly: newly.filter(function (id) { return catIds[id]; }).length,
+  return { instance: instance, kind: kind, from: from, to: to, runs: runs, runsAll: runsAll, exe: exe, count: count, findings: findings, perInd: perInd, newly: newly.filter(function (id) { return catIds[id]; }).length,
     covered: covered, total: SC.length, missing: missing, openRules: openRules, naChecks: naChecks, verified4pf: runs.filter(function (r) { return r.Status === 'Verified in 4Ps Forward'; }).length };
 }
 function renderReports() {
   var st = S.rep = S.rep || { preset: 'this', from: weekRange(0)[0], to: weekRange(0)[1] };
   $('#main').innerHTML = '<div class="row noprint" style="justify-content:space-between;align-items:flex-end"><div><h2>Reports</h2><div class="muted small">Weekly progress and findings, or the final report over all runs. Print to PDF or copy into Google Docs/Word.</div></div>' +
-    '<div class="row"><div class="seg" id="repPreset">' + [['this', 'This week'], ['last', 'Last week'], ['custom', 'Custom'], ['all', 'Final (all runs)']].map(function (p) { return '<button data-p="' + p[0] + '" class="' + (st.preset === p[0] ? 'on' : '') + '">' + p[1] + '</button>'; }).join('') + '</div>' +
+    '<div class="row"><label>Test instance <select id="repInstance" class="btn sm"><option value="">All runs</option><option value="both">Both test instances</option>' + instanceOptions(st.instance) + '<option value="unspecified">Unspecified</option></select></label><div class="seg" id="repPreset">' + [['this', 'This week'], ['last', 'Last week'], ['custom', 'Custom'], ['all', 'Final (all runs)']].map(function (p) { return '<button data-p="' + p[0] + '" class="' + (st.preset === p[0] ? 'on' : '') + '">' + p[1] + '</button>'; }).join('') + '</div>' +
     (st.preset === 'custom' ? '<input type="date" id="repFrom" class="btn sm" value="' + st.from + '"><input type="date" id="repTo" class="btn sm" value="' + st.to + '">' : '') +
     '<button class="btn" id="repCopy">Copy for Docs</button><button class="btn pri" id="repPrint">Print / Save PDF</button></div></div><div id="report" class="card" style="margin-top:12px"></div>';
+  $('#repInstance').value = st.instance || '';
+  $('#repInstance').onchange = function () { st.instance = this.value; renderReports(); };
   $$('#repPreset button').forEach(function (b) { b.onclick = function () {
     st.preset = b.dataset.p;
     if (st.preset === 'this') { var w = weekRange(0); st.from = w[0]; st.to = w[1]; } else if (st.preset === 'last') { var l = weekRange(-1); st.from = l[0]; st.to = l[1]; } else if (st.preset === 'all') { st.from = ''; st.to = ''; }
@@ -892,35 +942,35 @@ function renderReports() {
     } catch (e) { fallback(); }
     function fallback() { var r = document.createRange(); r.selectNodeContents(el); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); try { document.execCommand('copy'); done(); } catch (e) { toast('Select the report and copy it manually'); } s.removeAllRanges(); }
   };
-  $('#report').innerHTML = reportHTML(buildReport(st.from, st.to, st.preset === 'all' ? 'final' : 'weekly'));
+  $('#report').innerHTML = reportHTML(buildReport(st.from, st.to, st.preset === 'all' ? 'final' : 'weekly', st.instance));
 }
 function reportHTML(R) {
   var c = S.data.config, final = R.kind === 'final';
   var period = final ? 'All runs to date' : R.from + ' to ' + R.to;
   var pct = function (a, b) { return b ? Math.round(100 * a / b) + '%' : '—'; };
   var h = '<h2 style="margin-bottom:2px">' + (final ? 'SWDI Scoring Test — Final report' : 'SWDI Scoring Test — Weekly report') + '</h2>' +
-    '<div class="muted small">Period: <b>' + esc(period) + '</b> · Generated ' + esc(today()) + (tester() ? ' by ' + esc(tester()) : '') + (c.app_version ? ' · SWDI App build ' + esc(c.app_version) : '') + '</div>';
+    '<div class="muted small">Period: <b>' + esc(period) + '</b> · Test instance: ' + esc(R.instance === 'both' ? testInstances.join(' and ') : R.instance || 'All runs') + ' · Generated ' + esc(today()) + (tester() ? ' by ' + esc(tester()) : '') + (c.app_version ? ' · SWDI App build ' + esc(c.app_version) : '') + '</div>';
   h += '<h3 style="margin-top:16px">1. Summary</h3><table class="rep"><tr><td>Test runs (interviews) in period</td><td class="num"><b>' + R.runs.length + '</b></td><td>Cumulative runs</td><td class="num"><b>' + R.runsAll.length + '</b></td></tr>' +
     '<tr><td>Runs verified in 4Ps Forward</td><td class="num">' + R.verified4pf + '</td><td>Indicator checks executed</td><td class="num">' + R.exe.length + '</td></tr>' +
     '<tr><td>PASS</td><td class="num">' + R.count(R.exe, 'PASS') + ' (' + pct(R.count(R.exe, 'PASS'), R.exe.length) + ')</td><td>FAIL</td><td class="num">' + R.count(R.exe, 'FAIL') + '</td></tr>' +
-    '<tr><td>STATA RULE (DSWD change not implemented)</td><td class="num">' + R.count(R.exe, 'STATA RULE') + '</td><td>ROUNDING</td><td class="num">' + R.count(R.exe, 'ROUNDING') + '</td></tr>' +
+    '<tr><td>STATA RULE (matches BRVD comparison)</td><td class="num">' + R.count(R.exe, 'STATA RULE') + '</td><td>ROUNDING</td><td class="num">' + R.count(R.exe, 'ROUNDING') + '</td></tr>' +
     '<tr><td>Scenario coverage (cumulative)</td><td class="num">' + R.covered + ' / ' + R.total + ' (' + pct(R.covered, R.total) + ')</td><td>' + (final ? 'Not yet covered' : 'New scenarios this period') + '</td><td class="num">' + (final ? R.missing.length : R.newly) + '</td></tr></table>';
   var sev = R.findings.filter(function (f) { return f.verdict !== 'N/A CHECK'; });
   h += '<h3 style="margin-top:16px">2. Findings (' + sev.length + ')</h3>';
   if (!sev.length) h += '<p class="muted">No mismatches in this period.</p>';
   sev.forEach(function (f, i) {
     var runs = f.items.map(function (x) { return x.run; }).filter(function (x, j, a) { return a.indexOf(x) === j; });
-    var meaning = f.verdict === 'FAIL' ? 'Platform score matches neither the DSWD target rule nor the Stata command as written.' : f.verdict === 'STATA RULE' ? 'Platform follows the BRVD Stata command as written; the DSWD-requested change is not implemented.' + (STATA_NOTES[f.code] ? ' ' + STATA_NOTES[f.code] : '') :
+    var meaning = f.verdict === 'FAIL' ? 'Platform score matches neither the DSWD target rule nor the Stata command as written.' : f.verdict === 'STATA RULE' ? 'The observed score matches the BRVD Stata comparison.' + (STATA_NOTES[f.code] ? ' ' + STATA_NOTES[f.code] : '') :
       f.verdict === 'ROUNDING' ? 'Platform rounds the family average to a whole level instead of using the unrounded average.' : 'SWDI App and 4Ps Forward show different values for the same assessment.';
     h += '<div class="finding"><b>F' + (i + 1) + '. ' + f.code + ' — ' + esc(f.name) + '</b> <span class="pill ' + vcls(f.verdict) + '">' + esc(f.verdict) + '</span> <span class="small muted">' + runs.length + ' run(s) · ' + Object.keys(f.platforms).join(', ') + '</span>' +
       '<div class="small" style="margin:4px 0">' + esc(meaning) + '</div><table class="rep small"><tr><th>Run</th><th>Platform</th><th class="num">Expected</th><th class="num">Stata</th><th class="num">Observed</th><th>How the expected level was graded</th></tr>' +
-      f.items.slice(0, 8).map(function (x) { return '<tr><td>' + esc(x.run) + '</td><td>' + esc(x.platform) + '</td><td class="num">' + lvlTxt(x.expected) + '</td><td class="num">' + (x.stata === undefined || x.stata === '' ? '—' : lvlTxt(x.stata)) + '</td><td class="num">' + esc(x.observed) + '</td><td>' + esc(String(x.why || '').slice(0, 220)) + '</td></tr>'; }).join('') +
+      f.items.slice(0, 8).map(function (x) { return '<tr><td>' + esc(x.run) + '</td><td>' + esc(x.platform) + '</td><td class="num">' + lvlTxt(x.expected) + '</td><td class="num">' + (x.stata === undefined || x.stata === '' ? '—' : lvlTxt(x.stata)) + '</td><td class="num">' + esc(x.observed) + '</td><td>' + (f.verdict === 'STATA RULE' ? esc(x.why || '') + '<div>' + esc(x.stataWhy || '') + '</div><div style="white-space:pre-line">' + esc(x.memberEvidence || '') + '</div>' : esc(String(x.why || '').slice(0, 220))) + '</td></tr>'; }).join('') +
       (f.items.length > 8 ? '<tr><td colspan="6" class="muted">… ' + (f.items.length - 8) + ' more</td></tr>' : '') + '</table></div>';
   });
   h += '<h3 style="margin-top:16px">3. Results by indicator</h3><table class="rep small"><tr><th>Indicator</th><th class="num">Checks</th><th class="num">PASS</th><th class="num">FAIL</th><th class="num">STATA RULE</th><th class="num">ROUNDING</th><th class="num">N/A CHECK</th><th class="num">Pass rate</th></tr>' +
     R.perInd.map(function (p) { return '<tr><td><b>' + p.code + '</b> ' + esc(p.name) + '</td><td class="num">' + p.n + '</td><td class="num">' + p.pass + '</td><td class="num">' + (p.fail ? '<b style="color:var(--fail)">' + p.fail + '</b>' : 0) + '</td><td class="num">' + (p.stata ? '<b style="color:var(--amber)">' + p.stata + '</b>' : 0) + '</td><td class="num">' + p.round + '</td><td class="num">' + p.na + '</td><td class="num">' + pct(p.pass, p.n) + '</td></tr>'; }).join('') + '</table>';
-  h += '<h3 style="margin-top:16px">4. Test runs' + (final ? '' : ' in this period') + '</h3>' + (R.runs.length ? '<table class="rep small"><tr><th>Run</th><th>Family ID</th><th>Date</th><th>Tester</th><th>Mode</th><th>Status</th><th class="num">Expected total / LOWB</th><th class="num">App total</th><th class="num">4PsF total</th><th class="num">Pass / issues</th></tr>' +
-    R.runs.map(function (r) { return '<tr><td>' + esc(r['Run ID']) + '</td><td>' + esc(r['Family ID (HHID)']) + '</td><td>' + esc(runDate(r)) + '</td><td>' + esc(r.Tester) + '</td><td>' + esc(r.Mode) + '</td><td>' + esc(r.Status) + '</td><td class="num">' + fmt(r['Expected total (target)'], 4) + ' / L' + esc(r['Expected LOWB']) +
+  h += '<h3 style="margin-top:16px">4. Test runs' + (final ? '' : ' in this period') + '</h3>' + (R.runs.length ? '<table class="rep small"><tr><th>Run</th><th>Family ID</th><th>Test instance</th><th>Date</th><th>Tester</th><th>Mode</th><th>Status</th><th class="num">Expected total / LOWB</th><th class="num">App total</th><th class="num">4PsF total</th><th class="num">Pass / issues</th></tr>' +
+    R.runs.map(function (r) { return '<tr><td>' + esc(r['Run ID']) + '</td><td>' + esc(r['Family ID (HHID)']) + '</td><td>' + esc(instanceName(r.Environment) || 'Unspecified') + '</td><td>' + esc(runDate(r)) + '</td><td>' + esc(r.Tester) + '</td><td>' + esc(r.Mode) + '</td><td>' + esc(r.Status) + '</td><td class="num">' + fmt(r['Expected total (target)'], 4) + ' / L' + esc(r['Expected LOWB']) +
       '</td><td class="num">' + fmt(r['SWDI App total'], 4) + '</td><td class="num">' + fmt(r['4Ps Forward total'], 4) + '</td><td class="num">' + esc(r['Checks passed']) + ' / ' + esc(r['Checks not passed']) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">No runs in this period.</p>');
   var byNeed = {}; R.missing.forEach(function (s) { (byNeed[s.needs] = byNeed[s.needs] || []).push(s); });
   h += '<h3 style="margin-top:16px">5. Coverage still needed (' + R.missing.length + ' scenarios)</h3>' + (R.missing.length ? '<p class="small muted">Use this to choose next week\'s households: the "Needs" column says what kind of member the household must have.</p><table class="rep small"><tr><th>Needs</th><th class="num">Scenarios</th><th>Examples</th></tr>' +

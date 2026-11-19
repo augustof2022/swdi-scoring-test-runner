@@ -167,3 +167,19 @@ test('participation gives two members Level 2 until officer or activity counts q
   members[0].orgmem = members[1].orgmem = members[1].orgofficer1 = 2;
   assert.equal(v().level, 1);
 });
+
+test('child rights uses the lowest age-applicable child level in a mixed household', () => {
+  const first = person(1, 14, { name: 'Child A', birthreg: 1, educind: 2, childlabor_yes: 1 });
+  const second = person(4, 16, { name: 'Child B', birthreg: 1, educind: 1, schattendance: 3, childlabor_yes: 2 });
+  const score = () => E.scoreBoth(hh([first, second]), { thresholds: TH });
+  const { target, stata } = score();
+  assert.deepEqual(target.indicators.W.members.map(m => [m.met, m.applicable, m.level]), [[1, 3, 1], [3, 3, 3]]);
+  assert.equal(target.indicators.W.level, 1);
+  assert.equal(target.indicators.W.weighted, 0.0093);
+  assert.equal(stata.indicators.W.level, 2);
+  first.childlabor_yes = 2;
+  assert.equal(score().target.indicators.W.level, 2);
+  first.educind = 1;
+  first.schattendance = 3;
+  assert.equal(score().target.indicators.W.level, 3);
+});

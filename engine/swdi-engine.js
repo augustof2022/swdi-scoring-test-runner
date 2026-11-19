@@ -58,7 +58,7 @@
     { code: 'V', key: 'participation', name: 'Participation in organizations/associations (past 12 months)', dim: 'SA', w: 0.0093, scope: 'family', agg: 'COUNT', cov: '15+',
       criteria: { 1: 'No member is part of any organization/association/support group', 2: 'At least one member belongs to an organization or participated in its activities, and neither Level 3 condition applies', 3: 'A member is an officer, or more than one member participated in activities' } },
     { code: 'W', key: 'childrights', name: 'Protection of the rights of children', dim: 'SA', w: 0.0093, scope: 'family', agg: 'CHILDREN', cov: '0-17',
-      criteria: { 1: 'A child experienced only 1 of: birth registered, basic immunization, enrolled & regularly attending, not in child labour', 2: 'A child experienced 2-3 of them', 3: 'Every child experienced all (age-appropriate) of them' } },
+      criteria: { 1: 'At least one child meets at most one applicable requirement', 2: 'Every child meets at least two applicable requirements and at least one child falls short of all', 3: 'Every child experienced all (age-appropriate) of them' } },
     { code: 'X', key: 'gbv', name: 'Protection from gender-based violence', dim: 'SA', w: 0.0093, scope: 'family', agg: 'HH', cov: 'household',
       criteria: { 1: 'A member experienced GBV and no action has been taken', 2: 'Reported to support authorities (parent leader, C/ML, social worker)', 3: 'No member experienced GBV, or reported to formal authorities (barangay, police, court)' } },
     { code: 'Y', key: 'drrm', name: 'Practice of Disaster Risk Reduction and Management', dim: 'SA', w: 0.0093, scope: 'family', agg: 'HH', cov: 'household',
@@ -582,8 +582,8 @@
         parts.push('no child labour ' + (labor ? '✗' : '✓'));
       }
       flags.forEach(function (f) { extra.push(f); });
-      var lvl = rs === 'stata' ? (met === 4 ? 3 : met >= 2 ? 2 : met === 1 ? 1 : null) : null;
-      return { no: m.no, name: m.name || m.fname || '', age: a, applicable: app, met: met, all: met === app, level: lvl, parts: parts };
+      var lvl = rs === 'stata' ? (met === 4 ? 3 : met >= 2 ? 2 : met === 1 ? 1 : null) : (met === app ? 3 : met >= 2 ? 2 : 1);
+      return { no: m.no, name: m.name || m.fname || '', age: a, applicable: app, met: met, all: met === app, level: lvl, why: met + '/' + app + ' — ' + parts.join(', ') };
     });
     var lvl, br;
     if (rs === 'stata') {
@@ -592,13 +592,17 @@
       br = lvl === 3 ? 'W.L3.child_all_four' : lvl === 2 ? 'W.L2.child_two_to_three' : lvl === 1 ? 'W.L1.child_one' : 'W.unscored';
     } else {
       if (per.every(function (p) { return p.all; })) { lvl = 3; br = 'W.L3.every_child_meets_all_applicable'; }
-      else if (per.some(function (p) { return p.met >= 2; })) { lvl = 2; br = 'W.L2.a_child_meets_two_or_more'; }
-      else { lvl = 1; br = 'W.L1.no_child_meets_two'; }
+      else if (per.every(function (p) { return p.level >= 2; })) { lvl = 2; br = 'W.L2.every_child_meets_two_or_more'; }
+      else { lvl = 1; br = 'W.L1.a_child_below_two'; }
     }
     if (kids.length > 1 && per.some(function (p) { return p.all; }) && per.some(function (p) { return !p.all; })) extra.push('W.case.multiple_children_one_fails');
-    var why = per.map(function (p) { return 'M' + p.no + (p.name ? ' ' + p.name : '') + ' (' + p.age + '): ' + p.met + '/' + p.applicable + ' — ' + p.parts.join(', '); }).join(' | ') +
-      (rs === 'stata' ? ' (Stata needs all 4, family = best child assumed)' : '');
-    return { level: lvl, br: br, extra: uniq(extra), why: why, detail: { children: per.map(function (p) { return 'm' + p.no + ':' + p.met + '/' + p.applicable; }).join(' ') } };
+    var limiting = per.filter(function (p) { return p.level === lvl; }).map(function (p) {
+      return (p.name || 'Member ' + p.no) + ' (' + p.met + '/' + p.applicable + ')';
+    });
+    var why = rs === 'stata' ? 'BRVD comparison uses all four requirements for Level 3 and assumes the highest scored child determines the family level.'
+      : 'The lowest child level determines the family level. Level 3 requires every child to meet all age-applicable requirements.';
+    why += ' Family level ' + (lvl === null ? 'N/A' : lvl) + (limiting.length ? ' from ' + limiting.join(', ') : '') + '.';
+    return { level: lvl, br: br, extra: uniq(extra), members: per, why: why, detail: { children: per.map(function (p) { return 'm' + p.no + ':' + p.met + '/' + p.applicable; }).join(' ') } };
   }
 
   function fGBV(hh) {
