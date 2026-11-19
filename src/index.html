@@ -82,6 +82,12 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8
 .compare-body details{border-top:1px solid var(--line);margin-top:5px}
 .toast{position:fixed;right:18px;bottom:18px;background:#1d2733;color:#fff;padding:10px 14px;border-radius:8px;opacity:0;transform:translateY(8px);transition:.2s;z-index:50}
 .toast.on{opacity:1;transform:none}
+.busy-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(244,246,249,.65);backdrop-filter:blur(2px)}
+.busy-overlay[hidden],#thChip[hidden]{display:none!important}
+.busy-dialog{display:flex;align-items:center;gap:12px;max-width:calc(100vw - 32px);padding:18px 22px;background:var(--card);border:1px solid var(--line);box-shadow:0 12px 34px rgba(29,39,51,.17);border-radius:12px;font-weight:650}
+.busy-spinner{width:23px;height:23px;flex:none;border:3px solid #dae2ec;border-top-color:var(--navy);border-radius:50%;animation:busy-spin .7s linear infinite}
+@keyframes busy-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.busy-spinner{animation-duration:2s}}
 .legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;align-items:center}
 .tchip{display:inline-block;font-size:11px;background:#e3eefc;color:#173f73;border-radius:4px;padding:0 5px;margin:1px 3px 1px 0}
 table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
@@ -96,7 +102,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
   <span class="chip" id="appRelease" aria-label="App version">__APP_RELEASE__</span>
   <span class="chip" id="modeChip">loading…</span>
   <span class="sp"></span>
-  <span class="chip" id="thChip"></span>
+  <span class="chip" id="thChip" hidden></span>
   <label class="chip">Tester <input id="tester" list="testerList" placeholder="your name" style="width:150px"><datalist id="testerList"></datalist></label>
 </div>
 <div class="wrap">
@@ -117,6 +123,9 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
   <main id="main"><div class="card">Loading…</div></main>
 </div>
 <div class="toast" id="toast"></div>
+<div class="busy-overlay" id="busyOverlay" hidden role="status" aria-live="polite" aria-atomic="true">
+  <div class="busy-dialog"><span class="busy-spinner" aria-hidden="true"></span><span id="busyMessage">Working…</span></div>
+</div>
 <script>/*ENGINE*/</script>
 <script>/*PLANNER*/</script>
 <script>/*FIELDS*/</script>
@@ -138,6 +147,7 @@ var ALIASES = { A: ['employable skill'], B: ['employment'], C: ['income'], D: ['
   Q: ['tenure'], R: ['lighting'], S: ['ownership of assets', 'assets'], T: ['parenting'], U: ['discern', 'arrive at solutions', 'problem-solving', 'problem solving'], V: ['participation', 'organization'],
   W: ['rights of children', "children's rights", 'children rights'], X: ['gender', 'gbv'], Y: ['disaster', 'drrm'] };
 var S = { data: null, view: 'overview', run: null, tab: 'roster', live: false, showAll: false, dirty: false, who: 'mine', q: '', openOnly: false, cap: null };
+var BUSY_TOKEN = 0;
 
 // ---------- utils ----------
 function $(s, r) { return (r || document).querySelector(s); }
@@ -147,30 +157,67 @@ function num(v) { return SWDI.num(v); }
 function fmt(x, d) { if (x === null || x === undefined || x === '') return '—'; var n = Number(x); if (isNaN(n)) return esc(x); d = d === undefined ? 4 : d; return Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(d).replace(/0+$/, '').replace(/\.$/, ''); }
 function lvlTxt(x) { return x === null || x === undefined || x === '' ? 'N/A' : fmt(x, 2); }
 function toast(t, ms) { var e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(e._t); e._t = setTimeout(function () { e.classList.remove('on'); }, ms || 2600); }
+function beginBusy(label) {
+  var token = ++BUSY_TOKEN, layer = $('#busyOverlay');
+  $('#busyMessage').textContent = label;
+  layer.hidden = false;
+  $('#main').setAttribute('aria-busy', 'true');
+  return token;
+}
+function endBusy(token) {
+  if (token !== BUSY_TOKEN) return;
+  $('#busyOverlay').hidden = true;
+  $('#main').removeAttribute('aria-busy');
+}
+function afterPaint(label, work) {
+  var token = beginBusy(label);
+  requestAnimationFrame(function () {
+    setTimeout(function () {
+      try { work(); } catch (e) { toast('Could not complete action: ' + (e.message || e), 9000); }
+      finally { endBusy(token); }
+    }, 20);
+  });
+}
 function vcls(v) { return v === 'PASS' ? 'v-PASS' : v === 'FAIL' ? 'v-FAIL' : v === 'STATA RULE' ? 'v-STATA' : v === 'ROUNDING' ? 'v-ROUNDING' : v === 'N/A CHECK' ? 'v-NA' : v === 'CHECK' ? 'v-CHECK' : ''; }
 function pill(v) { return v ? '<span class="pill ' + vcls(v) + '">' + esc(v) + '</span>' : ''; }
 function store(k, v) { try { localStorage.setItem('swdi-runner-' + k, JSON.stringify(v)); } catch (e) {} }
 function load(k) { try { return JSON.parse(localStorage.getItem('swdi-runner-' + k)); } catch (e) { return null; } }
-function th() { var c = S.data.config, R = S.run; if (R && R.food !== '' && R.food !== undefined && R.pov !== '' && R.pov !== undefined) return { food: num(R.food), poverty: num(R.pov) }; return { food: num(c.food_threshold), poverty: num(c.poverty_threshold) }; }
+function th() {
+  var R = S.run, c = S.data.config;
+  return R ? { food: num(R.food), poverty: num(R.pov) } : { food: num(c.food_threshold), poverty: num(c.poverty_threshold) };
+}
+function updateThresholdChip() {
+  var chip = $('#thChip'), R = S.run;
+  if (!R || S.view !== 'run') { chip.hidden = true; chip.textContent = ''; return; }
+  chip.hidden = false;
+  chip.textContent = 'Active run · Food ' + (num(R.food) === null ? 'not set' : '₱' + fmt(R.food, 2)) +
+    ' · Poverty ' + (num(R.pov) === null ? 'not set' : '₱' + fmt(R.pov, 2));
+  chip.title = 'Threshold values entered for this test run in ① Household & roster (monthly per capita); not global Config values.';
+}
 function tester() { return $('#tester').value; }
 function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function listLabel(list, v) { var L = LISTS[list] || {}; return L[String(v)] || ''; }
 
 // ---------- server bridge ----------
-function call(fn, args, ok) {
+function call(fn, args, ok, fail) {
   if (S.live) {
-    var r = google.script.run.withSuccessHandler(function (x) { ok && ok(x); }).withFailureHandler(function (e) { toast('Error: ' + e.message, 9000); });
+    var r = google.script.run.withSuccessHandler(function (x) { if (ok) ok(x); })
+      .withFailureHandler(function (e) { if (fail) fail(e); else toast('Error: ' + (e.message || e), 9000); });
     r[fn].apply(r, args);
-  } else demoCall(fn, args, ok);
+  } else demoCall(fn, args, ok, fail);
 }
-function demoCall(fn, args, ok) {
+function demoCall(fn, args, ok, fail) {
   var db = load('db') || { runs: [], roster: [], entries: [], scores: [] };
   if (fn === 'getRun') { var id = args[0], f = function (r) { return r['Run ID'] === id; }; ok(JSON.stringify({ roster: db.roster.filter(f), entries: db.entries.filter(f), scores: db.scores.filter(f) })); return; }
   if (fn === 'saveRun') {
     var p = JSON.parse(args[0]), run = p.run;
     if (!run['Run ID']) { var d = today().replace(/-/g, ''), n = db.runs.filter(function (r) { return String(r['Run ID']).indexOf('RUN-' + d) === 0; }).length + 1; run['Run ID'] = 'RUN-' + d + '-' + ('0' + n).slice(-2); }
     var who = me() || 'unknown', old = db.runs.filter(function (r) { return r['Run ID'] === run['Run ID']; })[0], now = new Date().toISOString().slice(0, 16).replace('T', ' ');
-    if (old && p.baseRevision !== undefined && p.baseRevision !== null && Number(p.baseRevision) !== Number(old.Revision || 0)) { toast('Error: This run was saved by ' + (old['Last saved by'] || 'another tester') + ' after you opened it. Reopen the run to load their changes, then redo yours.', 9000); return; }
+    if (old && p.baseRevision !== undefined && p.baseRevision !== null && Number(p.baseRevision) !== Number(old.Revision || 0)) {
+      var conflict = new Error('This run was saved by ' + (old['Last saved by'] || 'another tester') + ' after you opened it. Reopen the run to load their changes, then redo yours.');
+      if (fail) fail(conflict); else toast('Error: ' + conflict.message, 9000);
+      return;
+    }
     run['Created by'] = old ? (old['Created by'] || who) : who; run['Created at'] = old ? old['Created at'] : now; run['Updated at'] = now; run['Last saved by'] = who; run.Revision = old ? Number(old.Revision || 0) + 1 : 1;
     var id2 = run['Run ID'], stamp = function (rows) { return rows.map(function (r) { r['Run ID'] = id2; r.Key = id2 + '|' + r.Key.split('|').slice(1).join('|'); return r; }); };
     db.runs = db.runs.filter(function (r) { return r['Run ID'] !== id2; }).concat([run]);
@@ -339,6 +386,7 @@ function renderCriteria() {
 
 // ---------- run view ----------
 function renderRun() {
+  updateThresholdChip();
   var R = S.run, ex = R.roster.some(function (r) { return r.age !== '' && r.age !== null; });
   var tabs = [['roster', '① Household & roster'], ['answers', '② Values to enter'], ['expected', '③ Expected & criteria'], ['verify', '④ Verify scores']];
   $('#main').innerHTML = '<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>' + esc(R.id || 'New test run') + '</h2><div class="muted">' + esc(R.fam ? 'Family ID ' + R.fam + (householdHead(R) ? ' · ' + householdHead(R) : '') : 'Pick the household in the SWDI App, then record its Family ID and roster.') + '</div>' +
@@ -377,8 +425,8 @@ function tabRoster() {
   $('#rFam').oninput = function () { R.fam = this.value.trim(); S.dirty = true; };
   $('#rDate').oninput = function () { R.date = this.value; };
   $('#rEnv').onchange = function () { R.env = this.value; S.dirty = true; };
-  $('#rFood').oninput = function () { R.food = this.value === '' ? '' : Number(this.value); S.dirty = true; };
-  $('#rPov').oninput = function () { R.pov = this.value === '' ? '' : Number(this.value); S.dirty = true; };
+  $('#rFood').oninput = function () { R.food = this.value === '' ? '' : Number(this.value); S.dirty = true; updateThresholdChip(); };
+  $('#rPov').oninput = function () { R.pov = this.value === '' ? '' : Number(this.value); S.dirty = true; updateThresholdChip(); };
   $$('#rMode button').forEach(function (b) { b.onclick = function () { R.mode = b.dataset.m; S.dirty = true; renderRun(); }; });
   $('#tabBody').addEventListener('input', function (e) {
     var tr = e.target.closest('tr[data-i]'); if (!tr || !e.target.dataset.k) return;
@@ -392,7 +440,13 @@ function tabRoster() {
   $('#goPlan').onclick = function () {
     var bad = R.roster.filter(function (m) { return m.age === '' || m.name === ''; });
     if (bad.length) { $('#planMsg').textContent = 'Enter the name and age of every member first.'; return; }
-    if (R.mode === 'Guided') { planRun(); } else if (!Object.keys(R.values.hh).length) prefillBlank();
+    if (R.mode === 'Guided') {
+      afterPaint(R.planned ? 'Re-planning test values…' : 'Planning test values…', function () {
+        planRun(); S.tab = 'answers'; renderRun();
+      });
+      return;
+    }
+    if (!Object.keys(R.values.hh).length) prefillBlank();
     S.tab = 'answers'; renderRun();
   };
 }
@@ -696,7 +750,7 @@ function tabVerify() {
   $('#saveVer').onclick = function () {
     var hasF = Object.keys(O.fpf).some(function (k) { return O.fpf[k] !== ''; }), hasS = Object.keys(O.swdi).some(function (k) { return O.swdi[k] !== ''; });
     if (hasF) R.status = 'Verified in 4Ps Forward'; else if (hasS && STATUSES.indexOf(R.status) < 3) R.status = 'Verified in SWDI App';
-    saveRun();
+    saveRun('results');
   };
 }
 function parseScreen(txt) {
@@ -764,22 +818,43 @@ function buildPayload() {
     'Household head': householdHead(R), Environment: instanceName(R.env), '4Ps Forward link': R.fpfUrl || '', Progress: progressOf(R).text };
   return { run: run, roster: roster, entries: entries, scores: scores, baseRevision: R.id ? R.rev : null };
 }
-function saveRun() {
+function saveRun(action) {
   var R = S.run;
   if (!R.fam) { toast('Enter the Family ID first (tab ①)'); S.tab = 'roster'; renderRun(); return; }
   if (R.status === 'Draft') R.status = 'Entering in SWDI App';
-  var p = buildPayload();
+  var p;
+  try { p = buildPayload(); } catch (e) { toast('Could not prepare save: ' + (e.message || e), 9000); return; }
+  var token = beginBusy(action === 'results' ? 'Saving results…' : 'Saving test run…');
+  function failure(e) { endBusy(token); toast('Save failed: ' + (e.message || e), 9000); }
   call('saveRun', [JSON.stringify(p), tester()], function (x) {
-    var res = String(x).charAt(0) === '{' ? JSON.parse(x) : { id: x };
-    R.id = res.id; R.rev = res.revision === undefined ? R.rev : res.revision; R.createdBy = res.createdBy || R.createdBy || me(); R.savedBy = res.savedBy || me();
-    S.dirty = false; store('draft', null); toast('Saved ' + R.id + ' — you can come back to it any time from the run list');
-    if (S.live) { google.script.run.withSuccessHandler(function (j) { var d = JSON.parse(j); S.data.runs = d.runs; S.data.scores = d.scores; renderNav(); renderRun(); }).getBootstrap(); }
-    else { renderNav(); renderRun(); }
-  });
+    try {
+      var res = String(x).charAt(0) === '{' ? JSON.parse(x) : { id: x };
+      R.id = res.id; R.rev = res.revision === undefined ? R.rev : res.revision;
+      R.createdBy = res.createdBy || R.createdBy || me(); R.savedBy = res.savedBy || me();
+      S.dirty = false; store('draft', null);
+      toast('Saved ' + R.id + ' — you can come back to it any time from the run list');
+      if (S.live) {
+        $('#busyMessage').textContent = 'Refreshing saved run…';
+        google.script.run.withSuccessHandler(function (j) {
+          try {
+            var d = JSON.parse(j);
+            S.data.runs = d.runs; S.data.scores = d.scores;
+            renderNav(); renderRun();
+          } catch (e) { toast('Run saved, but the list could not refresh: ' + (e.message || e), 9000); }
+          finally { endBusy(token); }
+        }).withFailureHandler(function (e) {
+          endBusy(token);
+          toast('Run saved, but refreshing the run list failed: ' + (e.message || e), 9000);
+        }).getBootstrap();
+      } else { renderNav(); renderRun(); endBusy(token); }
+    } catch (e) { failure(e); }
+  }, failure);
 }
 function openRun(id, tab, then) {
   var meta = (S.data.runs || []).filter(function (r) { return r['Run ID'] === id; })[0]; if (!meta) return;
+  var token = beginBusy('Loading test record ' + id + '…');
   call('getRun', [id], function (j) {
+    try {
     var d = JSON.parse(j), R = newRun();
     R.id = id; R.rev = meta.Revision === '' || meta.Revision === undefined ? null : Number(meta.Revision); R.createdBy = ownerOf(meta); R.savedBy = meta['Last saved by'] || ''; R.env = instanceName(meta.Environment); R.fpfUrl = meta['4Ps Forward link'] || '';
     R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
@@ -798,7 +873,9 @@ function openRun(id, tab, then) {
       if (sc['4Ps Forward observed (level)'] !== '' && sc['4Ps Forward observed (level)'] !== undefined) R.obs.fpf[sc.Code] = sc['4Ps Forward observed (level)'];
     });
     S.run = R; S.view = 'run'; S.tab = tab || resumeTab(meta); S.dirty = false; if (then) then(R); route();
-  });
+    } catch (e) { toast('Could not open test record: ' + (e.message || e), 9000); }
+    finally { endBusy(token); }
+  }, function (e) { endBusy(token); toast('Could not load test record: ' + (e.message || e), 9000); });
 }
 
 // ---------- import from 4Ps Forward ----------
@@ -1013,6 +1090,7 @@ function reportHTML(R) {
 function route() {
   renderNav();
   if (S.view === 'overview') renderOverview(); else if (S.view === 'criteria') renderCriteria(); else if (S.view === 'reports') renderReports(); else if (S.view === 'import') renderImport(); else renderRun();
+  updateThresholdChip();
   var dr = load('draft');
   if (S.view === 'overview' && dr && dr.run && !(S.run && S.dirty)) {
     $('#main').insertAdjacentHTML('afterbegin', '<div class="banner warn row" style="justify-content:space-between"><span>Unsaved changes for <b>' + esc(dr.run.fam || 'a new run') + '</b>' + (dr.run.id ? ' (' + esc(dr.run.id) + ')' : '') + ' from ' + esc(new Date(dr.at).toLocaleString()) + ' were kept in this browser.</span><span><button class="btn sm pri" id="drRestore">Restore</button> <button class="btn sm" id="drDrop">Discard</button></span></div>');
@@ -1030,13 +1108,6 @@ function boot(json) {
   $('#testerList').innerHTML = names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
   $('#tester').value = load('tester') || d.user || '';
   $('#tester').onchange = function () { store('tester', $('#tester').value); };
-  var c = d.config;
-  function thChip() {
-    if (S.live) { $('#thChip').textContent = 'Food ₱' + c.food_threshold + ' · Poverty ₱' + c.poverty_threshold; return; }
-    $('#thChip').innerHTML = 'Food ₱<input id="thF" type="number" value="' + esc(c.food_threshold) + '" style="width:70px;padding:1px 4px"> Poverty ₱<input id="thP" type="number" value="' + esc(c.poverty_threshold) + '" style="width:70px;padding:1px 4px">';
-    ['thF', 'thP'].forEach(function (id) { $('#' + id).onchange = function () { var f = num($('#thF').value), p = num($('#thP').value); if (f === null || p === null) return; c.food_threshold = f; c.poverty_threshold = p; store('config', { food_threshold: f, poverty_threshold: p }); route(); }; });
-  }
-  thChip();
   $('#newRun').onclick = function () { S.run = newRun(); S.view = 'run'; S.tab = 'roster'; route(); };
   S.who = load('who') || 'mine';
   $('#runQ').oninput = function () { S.q = this.value; renderNav(); };
