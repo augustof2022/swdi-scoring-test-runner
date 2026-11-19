@@ -183,3 +183,18 @@ test('child rights uses the lowest age-applicable child level in a mixed househo
   first.schattendance = 3;
   assert.equal(score().target.indicators.W.level, 3);
 });
+
+test('Stata employable skills tests recorded gradel independently of educind', () => {
+  const members = [1, 2, undefined].map((educind, i) => ({
+    no: i + 1, age: 18 + i, educind, gradel: 34013, educal: 24014, skills_n: 0
+  }));
+  members.push({ no: 4, age: 40, educind: 2, gradel: 34012, educal: 34024, skills_n: 0 },
+    { no: 5, age: 16, gradel: 34013, skills_n: 0 });
+  const { target, stata } = E.scoreBoth(hh(members), { thresholds: TH });
+  const result = stata.indicators.A;
+  assert.deepEqual(result.members.map(m => m.level), [3, 3, 3, 1, null]);
+  assert.equal(result.level, 2.5);
+  assert.match(result.members[1].why, /gradel 34013 qualifies/);
+  assert.match(result.members[3].why, /gradel 34012 does not meet/);
+  assert.equal(target.indicators.A.members[3].level, 3);
+});

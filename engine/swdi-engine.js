@@ -135,8 +135,9 @@
     if (a === null || a < min) return ex(a !== null && a >= 15 ? 'A.excl.15to17_stata_only' : 'A.excl.under15', 'age ' + a + ' — outside coverage (' + min + '+)');
     var n = skillCount(m), rec = false;
     for (var i = 1; i <= Math.max(n, 3); i++) if (yes(m['regskill' + i])) rec = true;
-    var attending = yes(m.educind);
-    var edu = rs === 'stata' ? (attending ? m.gradel : null) : (attending ? m.gradel : m.educal);
+    // Scoring Rules row 8 reads gradel directly, independently of the form's skip logic.
+    var field = rs === 'stata' || yes(m.educind) ? 'gradel' : 'educal';
+    var edu = m[field];
     var shs = isSHS(edu), lvl, br, why;
     if (n === 0) { lvl = 1; br = 'A.L1.no_skill'; }
     if (n === 1) { lvl = 2; br = 'A.L2.one_skill_not_recognized'; }
@@ -144,9 +145,7 @@
     if (n >= 2 && !rec) { lvl = 3; br = 'A.L3.two_plus_skills'; }
     if (shs) { if (lvl !== 3) br = 'A.L3.shs_or_higher'; lvl = 3; }
     why = n + ' skill(s)' + (n ? (rec ? ', at least one recognized' : ', none recognized') : '') + '; ' +
-      (attending ? 'attending, grade ' + (blank(m.gradel) ? '—' : m.gradel) : 'highest attainment ' + (blank(m.educal) ? '—' : m.educal)) +
-      (!attending && rs === 'stata' ? ' (highest attainment is not used by Stata)' :
-        shs ? ' = SHS diploma or higher' : ' (no qualifying diploma recorded)');
+      field + (blank(edu) ? ' not recorded' : ' ' + edu + (shs ? ' qualifies for the diploma criterion' : ' does not meet the diploma criterion'));
     var extra = [];
     if (shs) extra.push('A.code.' + shsBucket(edu));
     if (!shs && [34011, 34012, 34021, 34022, 34031, 34032, 35011, 35012].indexOf(num(edu)) >= 0) extra.push('A.bnd.grade11_12_not_graduate');
