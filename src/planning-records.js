@@ -2,12 +2,19 @@ function planningRoster_(roster) {
   return roster.map(r => ({'Run ID': r['Run ID'], 'Member #': r['Member #'], Age: r.Age, 'Member status': r['Member status']}));
 }
 
+// The engine compares monthly per-capita income, so thresholds saved as annual are divided by 12.
+function monthlyThresholds_(r) {
+  const annual = String(r['Threshold period'] || '').toLowerCase() === 'annual';
+  const m = v => v === '' || v == null || !annual || !isFinite(Number(v)) ? v : Number(v) / 12;
+  return {food: m(r['Food threshold']), poverty: m(r['Poverty threshold'])};
+}
+
 // Reduce the Runs, Scores, Roster and Entries tables to the inputs needed for the next preview.
 function planningRecords_(runs, scores, roster, entries, variables) {
   const allowed = new Set(variables), records = new Map(), members = new Map();
   runs.forEach(r => {
     const id = String(r['Run ID']);
-    records.set(id, {id, savedAt: r['Updated at'] || r['Created at'] || '', env: r.Environment || '', thresholds: {food: r['Food threshold'], poverty: r['Poverty threshold']}, household: null, scores: []});
+    records.set(id, {id, savedAt: r['Updated at'] || r['Created at'] || '', env: r.Environment || '', thresholds: monthlyThresholds_(r), household: null, scores: []});
     members.set(id, new Map());
   });
   roster.forEach(row => {

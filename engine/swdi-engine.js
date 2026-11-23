@@ -335,9 +335,9 @@
     var lvl = null, br = 'C.no_thresholds';
     why += ' = PCI ₱' + f2(pci).toLocaleString();
     if (food !== null && pov !== null) {
-      if (pci < food) { lvl = 1; br = 'C.L1.food_poor'; why += ' < food ₱' + food; }
-      else if (pci < pov) { lvl = 2; br = 'C.L2.income_poor'; why += ' ≥ food ₱' + food + ' and < poverty ₱' + pov; }
-      else { lvl = 3; br = 'C.L3.not_income_poor'; why += ' ≥ poverty ₱' + pov; }
+      if (pci < food) { lvl = 1; br = 'C.L1.food_poor'; why += ' < food ₱' + f2(food).toLocaleString(); }
+      else if (pci < pov) { lvl = 2; br = 'C.L2.income_poor'; why += ' ≥ food ₱' + f2(food).toLocaleString() + ' and < poverty ₱' + f2(pov).toLocaleString(); }
+      else { lvl = 3; br = 'C.L3.not_income_poor'; why += ' ≥ poverty ₱' + f2(pov).toLocaleString(); }
       [[food, 'food'], [pov, 'poverty']].forEach(function (cut) {
         var delta = pci - cut[0];
         if (Math.abs(delta) < 1e-9) extra.push('C.bnd.pci_at_' + cut[1] + '_threshold');

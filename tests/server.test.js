@@ -149,3 +149,18 @@ test('exportRecordPdf downloads a PDF or saves it in the Drive folder and record
   ctx.Session.getEffectiveUser = () => ({ getEmail: () => 'owner@dswd.gov.ph' });
   assert.throws(() => ctx.exportRecordPdf(html, 'x', id, 'drive', 't'), /Share the folder as Editor .*owner@dswd\.gov\.ph/);
 });
+
+test('planning grades saved runs with monthly thresholds: annual values are divided by 12', () => {
+  const { ctx } = load();
+  const runs = [
+    { 'Run ID': 'RUN-A', 'Food threshold': 24636, 'Poverty threshold': 31764, 'Threshold period': 'Annual' },
+    { 'Run ID': 'RUN-M', 'Food threshold': 2053, 'Poverty threshold': 2647, 'Threshold period': 'Monthly' },
+    { 'Run ID': 'RUN-OLD', 'Food threshold': 2053, 'Poverty threshold': 2647 },
+    { 'Run ID': 'RUN-NONE', 'Food threshold': '', 'Poverty threshold': '', 'Threshold period': 'Annual' }
+  ];
+  const th = JSON.parse(JSON.stringify(Object.fromEntries(ctx.planningRecords_(runs, [], [], [], []).map(r => [r.id, r.thresholds]))));
+  assert.deepEqual(th['RUN-A'], { food: 2053, poverty: 2647 });
+  assert.deepEqual(th['RUN-M'], { food: 2053, poverty: 2647 });
+  assert.deepEqual(th['RUN-OLD'], { food: 2053, poverty: 2647 });
+  assert.deepEqual(th['RUN-NONE'], { food: '', poverty: '' });
+});

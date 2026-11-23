@@ -32,6 +32,8 @@ Test tool for **Enhanced SWDI scoring** in the **SWDI App** (mobile) and **4Ps F
 
 ## Test details and exported test records
 
+* **Food and poverty thresholds** (① Household & roster) can be typed **monthly** or **annual** per capita. Tick **Annual (÷ 12)** for yearly values: income (C) is graded on monthly per-capita income, so annual thresholds are divided by 12 before the comparison. The field shows the monthly values used, and the run saves the values as typed plus a `Threshold period` column (runs saved before this column are monthly).
+* **Screen shows: level / weighted score** (④ Verify scores) also switches the expected ES and SA totals: **level** shows them re-scaled (raw ÷ 0.3333 or ÷ 0.6669, the 1–3 scale 4Ps Forward shows), **weighted score** shows the raw weighted sums. The TOTAL SWDI score and LOWB are the same in both.
 * **Levels** (indicator levels, family averages and the TOTAL score) always show 4 decimal places, e.g. `2.4000`.
 * **Why?** Every verdict other than `PASS` (`FAIL`, `STATA RULE`, `ROUNDING`, `N/A CHECK`), in both the SWDI App and the 4Ps Forward column, has a collapsible explanation: what the platform showed against the policy and Stata results, the member responses, and the criteria.
 * **Test details for the developer** (④ Verify scores): SWDI App version, SWDI App used (date & time), 4Ps Forward used (date & time) and the 4Ps Forward assessment shown (period, date, status). A capture fills the 4Ps Forward fields. They are saved in the Runs tab.
