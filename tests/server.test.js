@@ -70,6 +70,18 @@ test('saveRun assigns IDs, replaces a run\'s rows on re-save and deleteRun remov
   assert.ok(ss._sheets.Log._data.length >= 4);
 });
 
+test('getRuns returns the roster, entries and scores of several runs in one call', () => {
+  const { ctx } = load();
+  const id1 = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-1', 3)), 't')).id;
+  const id2 = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-2', 2)), 't')).id;
+  JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-3', 4)), 't'));
+  const many = JSON.parse(ctx.getRuns(JSON.stringify([id1, id2, 'RUN-MISSING'])));
+  assert.deepEqual(Object.keys(many).sort(), [id1, id2, 'RUN-MISSING'].sort());
+  assert.equal(many[id1].roster.length, 3); assert.equal(many[id2].roster.length, 2);
+  assert.equal(many[id1].entries.length, 2); assert.equal(many[id2].scores.length, 1);
+  assert.ok(many[id1].roster.every(r => r['Run ID'] === id1));
+  assert.deepEqual(many['RUN-MISSING'], { roster: [], entries: [], scores: [] });
+});
 test('multi-user: owner kept, last saver recorded, stale saves refused, old header row extended', () => {
   const { ctx, ss } = load();
   ctx.getBootstrap();
