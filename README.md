@@ -52,6 +52,16 @@ A separate, read-only extension (it does not replace the SWDI CMS Assistant revi
 
 Notes: 4Ps Forward shows **re-scaled** ES/SA (raw ÷ 0.3333 and raw ÷ 0.6669). Indicators missing from a *Partial* score are imported as `N/A`; the verdict is `FAIL` when the expected result has a level for them. 4Ps Forward codes map as A, B, C, D1→D, D2→E, E1→F, E2→G, E3→H, E4→I, E5→J, E6→K, F1→L, F2→M, F3→N, G1→O … G5→S, H1→T, H2→U, H3→V, I1→W, I2→X, I3→Y.
 
+## Verdicts
+
+| Verdict | When |
+|---|---|
+| `PASS` | The platform shows the policy (target) result, within tolerance. |
+| `STATA RULE` | The platform shows the BRVD Stata result and the policy result differs. |
+| `ROUNDING` | Only a decimal problem. The criteria were followed: the policy rule and the Stata command give the **same** family average with decimals (e.g. 2.8333), and the platform shows it rounded (3) or truncated (2). Its other family averages in the run show no decimals either. |
+| `FAIL` | Neither rule explains the score. A whole number near the policy average is **not** called `ROUNDING` when the policy and Stata rules give different family results for the indicator (the platform's member levels are then in question), or when the platform keeps decimals on its other family averages. The *Why?* text says which and, where possible, which member levels reproduce the platform score. |
+| `N/A CHECK` | The policy rule gives no level (no eligible member); confirm the handling with SCMD. |
+
 ## Rule sets
 
 * **Target**: the Criteria for the Levels of Well-Being plus the DSWD comments in BRVD *Scoring Rules*. Examples: age 15+ for skills; `educal` also counts for the SHS diploma; hazard-prone downgrades roof and walls; worst case applies to problems and DRRM; savings counts as a DRRM item; financial institutions use a combined access count; overweight is included in nutrition; income is net of 4Ps/CCT and of under-15 income, adds imputed rent ×12, and the family size excludes moved-out and deceased members.

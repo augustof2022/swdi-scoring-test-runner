@@ -198,3 +198,62 @@ test('Stata employable skills tests recorded gradel independently of educind', (
   assert.match(result.members[3].why, /gradel 34012 does not meet/);
   assert.equal(target.indicators.A.members[3].level, 3);
 });
+
+// ---------- verdicts: ROUNDING only when the criteria are confirmed ----------
+const judge = (o) => E.judgeScore(Object.assign({ code: 'A', tol: 0.01, avg: true, others: [] }, o));
+
+test('verdicts: PASS, STATA RULE, N/A CHECK and plain FAIL', () => {
+  assert.equal(judge({ obs: 2.3333, exp: 2.3333, stata: 1 }).verdict, 'PASS');
+  assert.equal(judge({ obs: 1, exp: 2.3333, stata: 1 }).verdict, 'STATA RULE');
+  assert.equal(judge({ obs: 2, exp: null, stata: null }).verdict, 'N/A CHECK');
+  assert.equal(judge({ obs: null, exp: 2, stata: 2 }).verdict, '');
+  assert.deepEqual(judge({ obs: 1.5, exp: 2.3333, stata: 2.3333 }), { verdict: 'FAIL', basis: 'mismatch' });
+});
+
+test('verdicts: ROUNDING when policy and Stata agree on the average and the platform drops the decimals', () => {
+  assert.deepEqual(judge({ obs: 3, exp: 2.8333, stata: 2.8333 }), { verdict: 'ROUNDING', basis: 'rounded' });
+  assert.deepEqual(judge({ obs: 2, exp: 2.8333, stata: 2.8333 }), { verdict: 'ROUNDING', basis: 'truncated' });
+  // other averages on the same platform are whole numbers too: still rounding
+  assert.equal(judge({ obs: 3, exp: 2.8333, stata: 2.8333, others: [{ code: 'F', obs: 2, tol: 0.01 }] }).verdict, 'ROUNDING');
+  // a whole-number policy result can never be rounding; family-level indicators never round
+  assert.equal(judge({ obs: 3, exp: 2, stata: 2 }).verdict, 'FAIL');
+  assert.equal(judge({ obs: 3, exp: 2.8333, stata: 2.8333, avg: false }).verdict, 'FAIL');
+  // ceiling of a low average is not rounding
+  assert.equal(judge({ obs: 3, exp: 2.3333, stata: 2.3333 }).verdict, 'FAIL');
+});
+
+test('verdicts: a whole number is not ROUNDING when the policy and Stata criteria disagree', () => {
+  const r = judge({ obs: 2, exp: 2.3333, stata: 1 });
+  assert.equal(r.verdict, 'FAIL');
+  assert.equal(r.basis, 'criteria_disputed');
+  assert.equal(judge({ obs: 2, exp: 2.3333, stata: null }).basis, 'criteria_disputed');
+});
+
+test('verdicts: a whole number is not ROUNDING when the platform keeps decimals on other averages', () => {
+  const r = judge({ obs: 3, exp: 2.8333, stata: 2.8333, others: [{ code: 'L', obs: 2.6667, tol: 0.01 }, { code: 'F', obs: 3, tol: 0.01 }] });
+  assert.equal(r.verdict, 'FAIL');
+  assert.equal(r.basis, 'keeps_decimals');
+  assert.deepEqual(r.decimals.map(o => o.code), ['L']);
+});
+
+test('verdicts: employable skill case (policy 2.3333, Stata 1.0000, 4Ps Forward 2.0000) is FAIL, not ROUNDING', () => {
+  const members = [
+    { no: 1, name: 'RAIZEN GREEN', age: 6, skills_n: 0 },
+    { no: 2, name: 'RAIZEN BLUE', age: 13, skills_n: 0 },
+    { no: 3, name: 'RHED LORKHAN', age: 18, educind: 1, gradel: 34012, skills_n: 0 },
+    { no: 4, name: 'RUBY ANN', age: 38, educind: 2, educal: 40001, skills_n: 0 },
+    { no: 5, name: 'RICHIE', age: 40, educind: 2, educal: 50002, skills_n: 0 }
+  ].map(m => Object.assign({ status: 1 }, m));
+  const { target, stata } = E.scoreBoth(hh(members), { thresholds: TH });
+  close(target.indicators.A.level, 7 / 3);
+  assert.equal(stata.indicators.A.level, 1);
+  const r = E.judgeScore({ code: 'A', obs: 2, exp: target.indicators.A.level, stata: stata.indicators.A.level, tol: 0.01, avg: true });
+  assert.equal(r.verdict, 'FAIL');
+  assert.equal(r.basis, 'criteria_disputed');
+  // no mix of the two rules' member levels gives 2.0: the platform counts or grades members another way
+  assert.equal(E.memberMixFor(target.indicators.A, stata.indicators.A, 2, 0.01), null);
+  // 1.6667 is reproduced by grading one of M4 / M5 by the Stata rule
+  const mix = E.memberMixFor(target.indicators.A, stata.indicators.A, 5 / 3, 0.01);
+  assert.equal(mix.switched.length, 1);
+  assert.deepEqual([mix.switched[0].from, mix.switched[0].to], [3, 1]);
+});
