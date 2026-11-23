@@ -30,6 +30,17 @@ Test tool for **Enhanced SWDI scoring** in the **SWDI App** (mobile) and **4Ps F
 * **Two people on one run.** Each save carries the revision the tester opened. If someone else saved in between, the save is refused with their name, so nobody overwrites a colleague's work silently.
 * **Unsaved work** is kept in the browser every few seconds; the Overview offers *Restore* after a closed tab or lost connection.
 
+## Test details and exported test records
+
+* **Levels** (indicator levels, family averages and the TOTAL score) always show 4 decimal places, e.g. `2.4000`.
+* **Why?** Every verdict other than `PASS` (`FAIL`, `STATA RULE`, `ROUNDING`, `N/A CHECK`), in both the SWDI App and the 4Ps Forward column, has a collapsible explanation: what the platform showed against the policy and Stata results, the member responses, and the criteria.
+* **Test details for the developer** (④ Verify scores): SWDI App version, SWDI App used (date & time), 4Ps Forward used (date & time) and the 4Ps Forward assessment shown (period, date, status). A capture fills the 4Ps Forward fields. They are saved in the Runs tab.
+* **Export test record** (④ Verify scores) builds a record to attach to an issue: test details, summary, every non-passing score with its explanation **expanded**, all scores, the roster, notes and (optionally) the values entered.
+  * **Print / Save as PDF** uses the browser's print dialog.
+  * **Download PDF** and **Upload PDF to Google Drive** convert the record on the server. The upload saves it in the Drive folder and shows the link with a **Copy link** button. The link is also saved in the run's `Exported record link` column.
+  * Drive folder: `config.json → driveFolderId`. The sheet's Config tab can override it with a `drive_folder_id` row (folder ID or link).
+  * The web app runs as the deploying account, so that account needs **Editor** access to the folder, and people who open the links need at least view access to it. After deploying this version, the owner opens the web app once and clicks **Allow** again, because it now asks for Google Drive access.
+
 ## SWDI Test Capture extension
 
 A separate, read-only extension (it does not replace the SWDI CMS Assistant reviewer extension). It runs only on `4ps-dp-preprod.dswd.gov.ph` and `4ps-dp-preprod-loadtest.dswd.gov.ph`.

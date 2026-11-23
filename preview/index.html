@@ -80,6 +80,9 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8
 .compare-body{padding:0 7px 6px;overflow-wrap:anywhere}.compare-body p{margin:4px 0}
 .compare .mtab{background:white}.compare .mtab th,.compare .mtab td{font-size:12px;padding:3px 5px}
 .compare-body details{border-top:1px solid var(--line);margin-top:5px}
+.compare .lead{background:#fff;border-radius:4px;padding:5px 7px;margin:2px 0 6px}
+.linkbox{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:8px 10px;background:var(--passbg);border-radius:8px}
+.linkbox input{flex:1;min-width:220px;border:1px solid var(--line);border-radius:6px;padding:4px 7px;font-size:12.5px;background:#fff}
 .toast{position:fixed;right:18px;bottom:18px;background:#1d2733;color:#fff;padding:10px 14px;border-radius:8px;opacity:0;transform:translateY(8px);transition:.2s;z-index:50}
 .toast.on{opacity:1;transform:none}
 .busy-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(244,246,249,.65);backdrop-filter:blur(2px)}
@@ -99,7 +102,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
 <body>
 <div class="top">
   <h1>SWDI Scoring Test Runner</h1>
-  <span class="chip" id="appRelease" aria-label="App version">v2.2.0 · ab16b6de</span>
+  <span class="chip" id="appRelease" aria-label="App version">v2.2.0 · e8f95765</span>
   <span class="chip" id="modeChip">loading…</span>
   <span class="sp"></span>
   <span class="chip" id="thChip" hidden></span>
@@ -1847,7 +1850,10 @@ function $$(s, r) { return Array.prototype.slice.call((r || document).querySelec
 function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 function num(v) { return SWDI.num(v); }
 function fmt(x, d) { if (x === null || x === undefined || x === '') return '—'; var n = Number(x); if (isNaN(n)) return esc(x); d = d === undefined ? 4 : d; return Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(d).replace(/0+$/, '').replace(/\.$/, ''); }
-function lvlTxt(x) { return x === null || x === undefined || x === '' ? 'N/A' : fmt(x, 2); }
+function dec4(x) { var n = Number(x); return isNaN(n) ? esc(x) : n.toFixed(4); }
+// Level scores (indicator levels, family averages, TOTAL) always show 4 decimal places, e.g. 2.4000.
+function lvlTxt(x) { return x === null || x === undefined || x === '' ? 'N/A' : dec4(x); }
+function totTxt(code, x) { return x === null || x === undefined || x === '' ? '—' : code === 'TOTAL' ? dec4(x) : code === 'LOWB' ? fmt(x) : fmt(x, 5); }
 function toast(t, ms) { var e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(e._t); e._t = setTimeout(function () { e.classList.remove('on'); }, ms || 2600); }
 function beginBusy(label) {
   var token = ++BUSY_TOKEN, layer = $('#busyOverlay');
@@ -1887,6 +1893,8 @@ function updateThresholdChip() {
   chip.title = 'Threshold values entered for this test run in ① Household & roster (monthly per capita); not global Config values.';
 }
 function tester() { return $('#tester').value; }
+function pad2(n) { return ('0' + n).slice(-2); }
+function localStamp(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
 function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function listLabel(list, v) { var L = LISTS[list] || {}; return L[String(v)] || ''; }
 
@@ -1962,7 +1970,8 @@ function instanceOptions(selected) {
 }
 function newRun() {
   return { id: '', fam: '', mode: 'Guided', date: today(), status: 'Draft', notes: '', food: S.data.config.food_threshold, pov: S.data.config.poverty_threshold, roster: [{ no: 1, name: '', age: '', sex: 2, reln: 1, status: 1 }],
-    values: { hh: {}, m: {} }, suggested: { hh: {}, m: {} }, targets: {}, obs: { swdi: {}, fpf: {}, mode: { swdi: 'level', fpf: 'level' } }, planned: false, env: '', fpfUrl: '', rev: null, createdBy: '', savedBy: '', importNote: '' };
+    values: { hh: {}, m: {} }, suggested: { hh: {}, m: {} }, targets: {}, obs: { swdi: {}, fpf: {}, mode: { swdi: 'level', fpf: 'level' } }, planned: false, env: '', fpfUrl: '', rev: null, createdBy: '', savedBy: '', importNote: '',
+    appVer: '', appAt: '', fpfAt: '', fpfAssess: '', exportLink: '' };
 }
 function engineHousehold(run) {
   return { hh: run.values.hh, members: run.roster.filter(function (r) { return r.age !== '' && r.age !== null; }).map(function (r) {
@@ -2453,7 +2462,7 @@ function tabExpected() {
   var html = (thw.food === null || thw.poverty === null ? '<div class="banner warn">Set the food and poverty thresholds in the Config tab of the sheet to grade income.</div>' : '') +
     '<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">Expected result (target rule)</h3><div class="small muted">Every level below shows the criterion applied. Members outside an indicator\'s age coverage are listed as excluded.</div></div>' +
     '<div class="row"><span class="pill">Raw ES ' + fmt(t.es_raw, 5) + ' (re-scaled ' + fmt(t.es_rescaled, 4) + ')</span><span class="pill">Raw SA ' + fmt(t.sa_raw, 5) + ' (re-scaled ' + fmt(t.sa_rescaled, 4) + ')</span>' +
-    '<span class="pill v-CHECK" style="font-size:13px">TOTAL ' + fmt(t.total, 5) + ' → LOWB ' + t.lowb + '</span>' + (Math.abs(t.total - s.total) > 1e-6 ? '<span class="pill v-STATA">Stata as written: ' + fmt(s.total, 5) + ' → LOWB ' + s.lowb + '</span>' : '') + '</div></div></div>';
+    '<span class="pill v-CHECK" style="font-size:13px">TOTAL ' + dec4(t.total) + ' → LOWB ' + t.lowb + '</span>' + (Math.abs(t.total - s.total) > 1e-6 ? '<span class="pill v-STATA">Stata as written: ' + dec4(s.total) + ' → LOWB ' + s.lowb + '</span>' : '') + '</div></div></div>';
   IND.forEach(function (d) {
     var a = t.indicators[d.code], b = s.indicators[d.code], conf = both.divergent.indexOf(d.code) >= 0;
     html += '<div class="ind"><div class="h"><b>' + d.code + '</b><span>' + esc(d.name) + '</span><span class="pill">' + esc(d.cov) + ' · ' + esc(d.agg) + ' · w ' + d.w.toFixed(4) + '</span>' +
@@ -2468,11 +2477,14 @@ function tabExpected() {
 }
 
 // ---------- verify ----------
-function verdict(code, obs, exp, stata) {
-  if (obs === null) return '';
+function tolFor(code) {
   var c = S.data.config, ltol = num(c.level_tolerance) || 0.01, wtol = num(c.weighted_tolerance) || 0.0006;
   var d = IND.filter(function (x) { return x.code === code; })[0];
-  var tol = d ? Math.max(ltol, wtol / d.w) : (code === 'LOWB' ? 0.01 : 0.0015);
+  return d ? Math.max(ltol, wtol / d.w) : (code === 'LOWB' ? 0.01 : 0.0015);
+}
+function verdict(code, obs, exp, stata) {
+  if (obs === null) return '';
+  var d = IND.filter(function (x) { return x.code === code; })[0], tol = tolFor(code);
   if (exp === null || exp === undefined) return 'N/A CHECK';
   if (Math.abs(obs - exp) <= tol) return 'PASS';
   if (stata !== null && stata !== undefined && Math.abs(stata - exp) > 1e-9 && Math.abs(obs - stata) <= tol) return 'STATA RULE';
@@ -2490,42 +2502,82 @@ function judgeOne(p, code, both) {
   var obs = O.mode[p] === 'weighted' ? SWDI.interpretObserved(code, raw, 'weighted') : raw;
   return verdict(code, obs, t.indicators[code].level, s.indicators[code].level);
 }
-function ruleComparison(d, both) {
+var PLATFORMS = { swdi: 'SWDI App', fpf: '4Ps Forward' };
+var EXPLAINED = ['FAIL', 'STATA RULE', 'ROUNDING', 'N/A CHECK'];
+// A collapsible block in the app; expanded (always readable) in the printed / PDF test record.
+function fold(summary, body, open) {
+  return open ? '<div class="fold"><div class="fold-h">' + summary + '</div>' + body + '</div>' : '<details><summary>' + summary + '</summary>' + body + '</details>';
+}
+function ruleComparison(d, both, open) {
   var target = both.target.indicators[d.code], stata = both.stata.indicators[d.code];
   var policy = d.code === 'A' ? 'For members aged 15+, a senior high school diploma qualifies for L3 even with zero reported skills. The family score averages the eligible members.' : '';
   var stataRule = STATA_NOTES[d.code] || '';
-  return '<div class="compare-body">' +
-    (policy ? '<p>' + esc(policy) + '</p>' : '') +
+  return (policy ? '<p>' + esc(policy) + '</p>' : '') +
     memberTable(target, d.code) + '<p><b>Policy</b> · ' + esc(target.why) + '</p>' +
     '<p><b>BRVD Stata</b> · ' + esc(stata.why) + (stataRule ? ' ' + esc(stataRule) : '') + '</p>' +
-    (stata.members && stata.members.length ? '<details><summary>Stata member breakdown</summary>' + memberTable(stata, d.code) + '</details>' : '') +
-    '<details><summary>Policy criteria</summary>' + [1, 2, 3].map(function (level) {
-      return '<p><b>L' + level + '</b> · ' + esc(d.criteria[level]) + '</p>';
-    }).join('') + '</details></div>';
+    (stata.members && stata.members.length ? fold('Stata member breakdown', memberTable(stata, d.code), open) : '') +
+    fold('Policy criteria', [1, 2, 3].map(function (level) {
+      return '<p' + (target.level === level ? ' style="font-weight:600"' : '') + '><b>L' + level + '</b> · ' + esc(d.criteria[level]) + '</p>';
+    }).join(''), open);
 }
-function comparisonDetails(p, code, both) {
-  var def = IND.find(function (d) { return d.code === code; });
-  function title(d) {
-    var target = both.target.indicators[d.code], levels = '';
-    if (d.agg === 'AVG' && target.members) {
-      var counts = [1, 2, 3].map(function (level) {
-        var n = target.members.filter(function (m) { return m.level === level; }).length;
-        return n ? n + ' at L' + level : '';
-      }).filter(Boolean);
-      if (counts.length) levels = ' (' + counts.join(', ') + ')';
-    }
-    return 'Policy L' + lvlTxt(target.level) + levels + ' · Stata L' + lvlTxt(both.stata.indicators[d.code].level);
+function indicatorTitle(d, both) {
+  var target = both.target.indicators[d.code], levels = '';
+  if (d.agg === 'AVG' && target.members) {
+    var counts = [1, 2, 3].map(function (level) {
+      var n = target.members.filter(function (m) { return m.level === level; }).length;
+      return n ? n + ' at L' + level : '';
+    }).filter(Boolean);
+    if (counts.length) levels = ' (' + counts.join(', ') + ')';
   }
-  if (def) return '<details class="compare"><summary>' + title(def) + ' · Why?</summary>' + ruleComparison(def, both) + '</details>';
-  var tt = totalsOf(both.target), st = totalsOf(both.stata), key = code, raw = num(S.run.obs[p][code]);
-  if ((code === 'ES' || code === 'SA') && Math.abs(raw - tt[code + '_R']) < Math.abs(raw - tt[code])) key += '_R';
-  var changed = IND.filter(function (d) {
-    return (code !== 'ES' && code !== 'SA' || code === d.dim) && both.divergent.indexOf(d.code) >= 0;
+  return 'Policy ' + lvlTxt(target.level) + levels + ' · Stata ' + lvlTxt(both.stata.indicators[d.code].level);
+}
+/** What a verdict compared for one platform: observed (as a level), the policy and Stata values, and how to print them. */
+function compareValues(p, code, both) {
+  var O = S.run.obs, raw = O[p][code], d = IND.filter(function (x) { return x.code === code; })[0];
+  if (d) {
+    var n = num(raw), weighted = O.mode[p] === 'weighted' && n !== null;
+    return { na: isNA(raw), raw: raw, weighted: weighted, obs: weighted ? SWDI.interpretObserved(code, n, 'weighted') : n,
+      exp: both.target.indicators[code].level, stata: both.stata.indicators[code].level, f: lvlTxt };
+  }
+  var tt = totalsOf(both.target), st = totalsOf(both.stata), key = code, r = num(raw);
+  if ((code === 'ES' || code === 'SA') && r !== null && Math.abs(r - tt[code + '_R']) < Math.abs(r - tt[code])) key += '_R';
+  return { na: isNA(raw), raw: raw, obs: r, exp: tt[key], stata: st[key], rescaled: key !== code, f: function (x) { return totTxt(code, x); } };
+}
+/** One-paragraph reason for a non-PASS verdict on one platform. */
+function verdictLead(p, code, both, result) {
+  var v = compareValues(p, code, both), plat = PLATFORMS[p], f = v.f, none = function (x) { return x === null || x === undefined || x === ''; };
+  var obsTxt = v.na ? 'no score (N/A)' : f(v.obs) + (v.weighted ? ' (typed as weighted score ' + esc(v.raw) + ')' : '') + (v.rescaled ? ' (re-scaled)' : '');
+  var expTxt = none(v.exp) ? 'no level' : f(v.exp), stTxt = none(v.stata) ? 'no level' : f(v.stata);
+  if (result === 'FAIL') {
+    if (v.na) return plat + ' shows no score (N/A), but the policy rule expects ' + expTxt + ' (BRVD Stata: ' + stTxt + '). The platform did not compute an indicator that has a level.';
+    return plat + ' shows <b>' + obsTxt + '</b>. The policy rule expects <b>' + expTxt + '</b> and the BRVD Stata command gives <b>' + stTxt + '</b>, so neither rule explains the platform score.' +
+      (none(v.exp) || v.obs === null ? '' : ' Difference from the policy result: ' + dec4(v.obs - v.exp) + ' (allowed tolerance ±' + dec4(tolFor(code)) + ').');
+  }
+  if (result === 'STATA RULE') return plat + ' shows <b>' + obsTxt + '</b>, which matches the BRVD Stata command as written (<b>' + stTxt + '</b>) and not the policy rule (<b>' + expTxt + '</b>). The DSWD-requested rule change is not implemented.';
+  if (result === 'ROUNDING') return plat + ' shows <b>' + obsTxt + '</b> while the policy family average is <b>' + expTxt + '</b>. The platform appears to round the family average to a whole level instead of keeping the decimals.';
+  if (result === 'N/A CHECK') return 'The policy rule gives no level here (no eligible member, or an open rule to confirm with SCMD); ' + plat + ' shows <b>' + obsTxt + '</b>. Confirm the expected handling with SCMD.';
+  return '';
+}
+/** Explanation body for one code: the criteria trail of an indicator, or the indicators behind a total. */
+function explainBody(p, code, both, open) {
+  var def = IND.filter(function (d) { return d.code === code; })[0];
+  if (def) return ruleComparison(def, both, open);
+  var related = IND.filter(function (d) {
+    if ((code === 'ES' || code === 'SA') && d.dim !== code) return false;
+    var v = judgeOne(p, d.code, both);
+    return both.divergent.indexOf(d.code) >= 0 || (v && v !== 'PASS');
   });
-  return '<details class="compare"><summary>Policy ' + fmt(tt[key], 5) + ' · Stata ' + fmt(st[key], 5) + ' · Why?</summary><div class="compare-body">' +
-    changed.map(function (d) {
-      return '<details><summary>' + esc(d.code + ' · ' + d.name) + ' · ' + title(d) + '</summary>' + ruleComparison(d, both) + '</details>';
-    }).join('') + '</div></details>';
+  if (!related.length) return '<p class="muted">No indicator in this total differs between the policy and Stata rules, and no indicator in it was flagged on ' + PLATFORMS[p] + '. Check the weights and the sum on the platform.</p>';
+  return '<p>Indicators in this total that differ between the rules or were flagged on ' + PLATFORMS[p] + ':</p>' + related.map(function (d) {
+    var v = judgeOne(p, d.code, both);
+    return fold(esc(d.code + ' · ' + d.name) + ' · ' + indicatorTitle(d, both) + (v ? ' · ' + PLATFORMS[p] + ' ' + pill(v) : ''), ruleComparison(d, both, open), open);
+  }).join('');
+}
+function comparisonDetails(p, code, both, result) {
+  var v = compareValues(p, code, both), def = IND.filter(function (d) { return d.code === code; })[0];
+  var title = def ? indicatorTitle(def, both) : 'Policy ' + v.f(v.exp) + ' · Stata ' + v.f(v.stata);
+  return '<details class="compare"><summary>' + title + ' · Why ' + esc(result) + '?</summary><div class="compare-body">' +
+    '<p class="lead">' + verdictLead(p, code, both, result) + '</p>' + explainBody(p, code, both, false) + '</div></details>';
 }
 function tabVerify() {
   var R = S.run, both = expectedFor(R), t = both.target, tt = totalsOf(t), O = R.obs;
@@ -2539,13 +2591,15 @@ function tabVerify() {
         return '<tr><td title="' + esc(d.name) + '"><b>' + d.code + '</b> <span class="small muted">' + esc(d.name.slice(0, 32)) + '</span></td><td class="num">' + (O.mode[p] === 'weighted' ? fmt(a.weighted, 5) : lvlTxt(a.level)) + '</td>' +
           '<td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + TOTALS.map(function (d) {
-        return '<tr style="background:#f7f9fc"><td><b>' + d.name + '</b></td><td class="num">' + fmt(tt[d.code], 5) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
+        return '<tr style="background:#f7f9fc"><td><b>' + d.name + '</b></td><td class="num">' + totTxt(d.code, tt[d.code]) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + '</table></div>';
   }
-  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison. Open <b>Why?</b> below a matching verdict to compare the member responses and calculations; <b>ROUNDING</b> = it rounded a family average.</div>' +
+  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison; <b>ROUNDING</b> = it rounded a family average. Every verdict other than PASS has a <b>Why?</b> row below it with the member responses, criteria and calculations.</div>' +
+    testDetailsCard(R) +
     '<div class="row noprint" style="margin-bottom:10px"><button class="btn sm" id="goImport">Import 4Ps Forward scores from the capture extension…</button>' + (R.fpfUrl ? '<a class="small" target="_blank" rel="noopener" href="' + esc(R.fpfUrl) + '">Open in 4Ps Forward ↗</a>' : '') + '</div>' +
     '<div class="grid2">' + col('swdi', 'SWDI App') + col('fpf', '4Ps Forward') + '</div>' +
     '<div class="card"><label class="field">Notes<textarea id="vNotes">' + esc(R.notes) + '</textarea></label></div>' +
+    exportCard(R) +
     '<div class="sticky"><button class="btn pri" id="saveVer">Save results</button><span class="small muted">Saving sets the status from what you filled in.</span></div>';
   $('#goImport').onclick = function () { S.view = 'import'; route(); };
   function updateVerdict(p, code) {
@@ -2553,14 +2607,21 @@ function tabVerify() {
     var result = judgeOne(p, code, both);
     cell.innerHTML = pill(result);
     if (next && next.classList.contains('compare-row')) next.remove();
-    if (result === 'STATA RULE') {
-      row.insertAdjacentHTML('afterend', '<tr class="compare-row"><td colspan="4">' + comparisonDetails(p, code, both) + '</td></tr>');
+    if (EXPLAINED.indexOf(result) >= 0) {
+      row.insertAdjacentHTML('afterend', '<tr class="compare-row"><td colspan="4">' + comparisonDetails(p, code, both, result) + '</td></tr>');
     }
   }
   ['swdi', 'fpf'].forEach(function (p) { IND.concat(TOTALS).forEach(function (d) { updateVerdict(p, d.code); }); });
+  bindTestDetails(R);
+  bindExport(R);
   var body = $('#tabBody');
   body.addEventListener('input', function (e) {
-    if (e.target.classList.contains('vin')) { O[e.target.dataset.p][e.target.dataset.c] = e.target.value; S.dirty = true; updateVerdict(e.target.dataset.p, e.target.dataset.c); }
+    if (e.target.classList.contains('vin')) {
+      var p = e.target.dataset.p, c = e.target.dataset.c;
+      O[p][c] = e.target.value; S.dirty = true; updateVerdict(p, c);
+      // The totals' explanations list the flagged indicators, so refresh them too.
+      if (TOTALS.every(function (d) { return d.code !== c; })) TOTALS.forEach(function (d) { updateVerdict(p, d.code); });
+    }
     if (e.target.id === 'vNotes') { R.notes = e.target.value; S.dirty = true; }
   });
   body.addEventListener('change', function (e) { if (e.target.type === 'radio') { O.mode[e.target.name.slice(1)] = e.target.value; renderRun(); } });
@@ -2577,6 +2638,201 @@ function tabVerify() {
     if (hasF) R.status = 'Verified in 4Ps Forward'; else if (hasS && STATUSES.indexOf(R.status) < 3) R.status = 'Verified in SWDI App';
     saveRun('results');
   };
+}
+// ---------- test details & exported test record ----------
+function dtInput(v) { v = String(v || '').trim().replace(' ', 'T'); return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v) ? v.slice(0, 16) : ''; }
+function dtShow(v) { return String(v || '').replace('T', ' ').trim(); }
+function testDetailsCard(R) {
+  function dt(id, label, v, hint) {
+    return '<label class="field">' + label + '<span class="row" style="gap:4px;flex-wrap:nowrap"><input id="' + id + '" type="datetime-local" value="' + esc(dtInput(v)) + '" style="min-width:190px">' +
+      '<button type="button" class="btn sm" data-now="' + id + '">Now</button></span>' + (hint ? '<span class="small muted">' + hint + '</span>' : '') + '</label>';
+  }
+  return '<div class="card"><h3>Test details for the developer</h3><p class="small muted" style="margin:-6px 0 10px">Record the app version and when each platform was used, so the developer can match this record to their logs and builds. These go on the exported test record.</p>' +
+    '<div class="row" style="align-items:flex-start">' +
+    '<label class="field">SWDI App version<input id="dAppVer" value="' + esc(R.appVer) + '" placeholder="e.g. 2.4.1 (build 118)"><span class="small muted">As shown in the SWDI App (About / Settings)</span></label>' +
+    dt('dAppAt', 'SWDI App used (date &amp; time)', R.appAt, 'When the assessment was entered and synced') +
+    dt('dFpfAt', '4Ps Forward used (date &amp; time)', R.fpfAt, 'When the score was checked on the web; filled by a capture') +
+    '<label class="field" style="flex:1;min-width:240px">4Ps Forward assessment shown<input id="dFpfAssess" value="' + esc(R.fpfAssess) + '" placeholder="Period · date · status as shown in the Assessment Review"><span class="small muted">Filled by a capture; type it if you read it from the screen</span></label>' +
+    '</div></div>';
+}
+function bindTestDetails(R) {
+  var map = { dAppVer: 'appVer', dAppAt: 'appAt', dFpfAt: 'fpfAt', dFpfAssess: 'fpfAssess' };
+  Object.keys(map).forEach(function (id) {
+    $('#' + id).addEventListener('input', function () { R[map[id]] = this.type === 'datetime-local' ? dtShow(this.value) : this.value.trim(); S.dirty = true; });
+  });
+  $$('[data-now]').forEach(function (b) { b.onclick = function () {
+    var inp = $('#' + b.dataset.now), now = localStamp(new Date());
+    inp.value = dtInput(now); R[map[b.dataset.now]] = now; S.dirty = true;
+  }; });
+}
+function linkBox(url, label) {
+  return '<div class="linkbox"><span class="small muted">' + esc(label) + '</span><input readonly value="' + esc(url) + '" onfocus="this.select()">' +
+    '<button type="button" class="btn sm pri" data-copy>Copy link</button><a class="btn sm" target="_blank" rel="noopener" href="' + esc(url) + '">Open ↗</a></div>';
+}
+function exportCard(R) {
+  return '<div class="card noprint" id="exportCard"><h3>Export test record</h3><p class="small muted" style="margin:-6px 0 10px">A PDF of this run to attach to an issue: household, tester, app version and dates, the score from each platform against the expected result, and every explanation expanded.</p>' +
+    '<div class="row small"><label><input type="checkbox" id="xValues" checked> Include the values entered (appendix)</label><label><input type="checkbox" id="xPass"> Also explain indicators that passed</label></div>' +
+    '<div class="row" style="margin-top:10px"><button type="button" class="btn" id="xPrint">Print / Save as PDF</button><button type="button" class="btn" id="xDownload">Download PDF</button>' +
+    '<button type="button" class="btn pri" id="xDrive">Upload PDF to Google Drive</button></div>' +
+    '<div id="xOut">' + (R.exportLink ? linkBox(R.exportLink, 'Last uploaded record') : '') + '</div></div>';
+}
+function copyLink(input) {
+  input.focus(); input.select();
+  var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  if (ok) { toast('Link copied'); return; }
+  if (navigator.clipboard) navigator.clipboard.writeText(input.value).then(function () { toast('Link copied'); }, function () { toast('Press Ctrl+C to copy the selected link', 5000); });
+  else toast('Press Ctrl+C to copy the selected link', 5000);
+}
+function bindExport(R) {
+  var opts = function () { return { values: $('#xValues').checked, pass: $('#xPass').checked }; };
+  $('#xPrint').onclick = function () { printRecord(R, opts()); };
+  $('#xDownload').onclick = function () { exportPdf(R, opts(), 'download'); };
+  $('#xDrive').onclick = function () { exportPdf(R, opts(), 'drive'); };
+  $('#exportCard').addEventListener('click', function (e) { if (e.target.hasAttribute('data-copy')) copyLink(e.target.parentElement.querySelector('input')); });
+}
+var REC_CSS = '.rec{font:11px/1.4 Arial,Helvetica,sans-serif;color:#1d2733;background:#fff}' +
+  '.rec h1{font-size:18px;margin:0 0 2px;color:#1f3a5f}.rec .sub{color:#5d6b7a;margin:0 0 10px}' +
+  '.rec h2{font-size:13.5px;margin:16px 0 6px;color:#1f3a5f;border-bottom:2px solid #1f3a5f;padding-bottom:2px}' +
+  '.rec h3{font-size:12px;margin:0 0 4px}.rec p{margin:3px 0}' +
+  '.rec table{border-collapse:collapse;width:100%;margin:4px 0 8px}' +
+  '.rec th,.rec td{border:1px solid #cfd6df;padding:3px 5px;text-align:left;vertical-align:top;font-size:10.5px}' +
+  '.rec th{background:#eef2f7;color:#2b3846;font-weight:bold}.rec .num{text-align:right}.rec .meta th{width:19%}.rec .meta td{width:31%}' +
+  '.rec .pill{display:inline-block;padding:0 6px;border-radius:8px;font-weight:bold;font-size:10px;background:#eef1f5;color:#3a4756;white-space:nowrap}' +
+  '.rec .v-PASS{background:#e2f5ea;color:#1b7f4b}.rec .v-FAIL{background:#fde4e2;color:#b42318}.rec .v-STATA,.rec .v-ROUNDING{background:#fff3d6;color:#9a6200}.rec .v-NA,.rec .v-CHECK{background:#e3eefc;color:#1d5fb4}' +
+  '.rec .finding{border:1px solid #cfd6df;border-left:4px solid #b42318;padding:6px 8px;margin:8px 0;page-break-inside:avoid}' +
+  '.rec .finding.amber{border-left-color:#e2a400}.rec .finding.blue{border-left-color:#1d5fb4}.rec .finding.green{border-left-color:#1b7f4b}' +
+  '.rec .lead{background:#f7f9fc;padding:4px 6px;margin:4px 0}.rec .fold{margin:6px 0 0}.rec .fold-h{font-weight:bold;color:#1f3a5f;margin:6px 0 2px}' +
+  '.rec .mtab{margin:4px 0}.rec tr.ex td{color:#8a96a3}.rec .muted{color:#5d6b7a}.rec .foot{margin-top:14px;color:#5d6b7a;font-size:9.5px;border-top:1px solid #cfd6df;padding-top:4px}' +
+  '.rec .warn{background:#fff3d6;color:#6d4a00;padding:4px 6px;margin:6px 0}.rec a{color:#1d5fb4;word-break:break-all}';
+function findingClass(vs) { return vs.indexOf('FAIL') >= 0 ? '' : vs.indexOf('STATA RULE') >= 0 || vs.indexOf('ROUNDING') >= 0 ? ' amber' : vs.every(function (v) { return v === 'PASS'; }) ? ' green' : ' blue'; }
+/** The printable test record: {title, fileName, html (the .rec block), doc (a complete HTML document for the PDF converter)}. */
+function recordReport(R, opts) {
+  opts = opts || {};
+  var both = expectedFor(R), t = both.target, s = both.stata, tt = totalsOf(t), st = totalsOf(s), payload = buildPayload();
+  var now = new Date(), tz = (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } })();
+  var stamp = localStamp(now) + (tz ? ' (' + tz + ')' : ''), head = householdHead(R), active = R.roster.filter(function (m) { return Number(m.status) === 1; }).length;
+  var title = 'SWDI scoring test record · ' + (R.id || 'unsaved run') + ' · Family ID ' + (R.fam || '—');
+  var fileName = 'SWDI test record ' + (R.id || 'unsaved') + ' - HH ' + (R.fam || 'no ID') + ' - ' + localStamp(now).replace(':', '');
+  var val = function (v) { return v === '' || v === null || v === undefined ? '<span class="muted">—</span>' : esc(v); };
+  var link = function (u) { return u ? '<a href="' + esc(u) + '">' + esc(u) + '</a>' : '<span class="muted">—</span>'; };
+  var th2 = function (a, b, c, d) { return '<tr><th>' + a + '</th><td>' + b + '</td><th>' + c + '</th><td>' + d + '</td></tr>'; };
+  var h = '<div class="rec"><h1>SWDI Scoring Test Record</h1><p class="sub">' + esc(R.id || 'Unsaved run') + ' · Family ID ' + esc(R.fam || '—') + (head ? ' · ' + esc(head) : '') + ' · exported ' + esc(stamp) + '</p>' +
+    (S.dirty ? '<p class="warn">This record includes changes that were not saved to the sheet when it was exported.</p>' : '') +
+    '<h2>1. Test details</h2><table class="meta">' +
+    th2('Run ID', val(R.id), 'Family ID (HHID)', val(R.fam)) +
+    th2('Household head', val(head), 'Members', active + ' active of ' + R.roster.length + ' listed') +
+    th2('Test instance', val(instanceName(R.env) || 'Unspecified'), 'Mode · status', esc(R.mode + ' · ' + R.status)) +
+    th2('Interview date', val(R.date), 'Thresholds (monthly per capita)', 'Food ' + (num(R.food) === null ? '—' : '₱' + fmt(R.food, 2)) + ' · Poverty ' + (num(R.pov) === null ? '—' : '₱' + fmt(R.pov, 2))) +
+    th2('SWDI App version', val(R.appVer), 'SWDI App used (date &amp; time)', val(dtShow(R.appAt))) +
+    th2('4Ps Forward used (date &amp; time)', val(dtShow(R.fpfAt)), '4Ps Forward assessment shown', val(R.fpfAssess)) +
+    '<tr><th>4Ps Forward link</th><td colspan="3">' + link(R.fpfUrl) + '</td></tr>' +
+    th2('Created by', val(R.createdBy || me()), 'Last saved by', val(R.savedBy) + (R.rev ? ' · revision ' + esc(R.rev) : '')) +
+    th2('Exported by', val(tester() || me()), 'Exported at', esc(stamp)) +
+    th2('Test Runner version', esc(($('#appRelease') || {}).textContent || ''), 'Rule sets', 'Policy (BRVD Scoring Rules + DSWD comments) and BRVD Stata as written') + '</table>';
+
+  // 2. Summary
+  var count = function (key) {
+    var c = {}; payload.scores.forEach(function (r) { var v = r[key]; if (v) c[v] = (c[v] || 0) + 1; });
+    var keys = Object.keys(c); return keys.length ? keys.map(function (k) { return pill(k) + ' ' + c[k]; }).join(' &nbsp; ') : '<span class="muted">not entered</span>';
+  };
+  var obsTot = function (p) { var v = R.obs[p].TOTAL; return v === undefined || v === '' ? '—' : isNA(v) ? 'N/A' : totTxt('TOTAL', v); };
+  h += '<h2>2. Summary</h2><table><tr><th></th><th class="num">TOTAL SWDI score</th><th class="num">LOWB</th><th>Verdicts (25 indicators + 4 totals)</th></tr>' +
+    '<tr><td><b>Expected · policy rule</b></td><td class="num">' + dec4(tt.TOTAL) + '</td><td class="num">' + fmt(tt.LOWB) + '</td><td class="muted">Graded by the test runner from the values entered</td></tr>' +
+    '<tr><td><b>BRVD Stata as written</b></td><td class="num">' + dec4(st.TOTAL) + '</td><td class="num">' + fmt(st.LOWB) + '</td><td class="muted">' + (both.divergent.length ? 'Rules differ on ' + esc(both.divergent.join(', ')) : 'Same as the policy rule') + '</td></tr>' +
+    '<tr><td><b>SWDI App</b></td><td class="num">' + obsTot('swdi') + '</td><td class="num">' + val(R.obs.swdi.LOWB) + '</td><td>' + count('SWDI App verdict') + '</td></tr>' +
+    '<tr><td><b>4Ps Forward</b></td><td class="num">' + obsTot('fpf') + '</td><td class="num">' + val(R.obs.fpf.LOWB) + '</td><td>' + count('4Ps Forward verdict') + '</td></tr></table>';
+
+  // 3. Findings, every explanation expanded
+  var codes = IND.concat(TOTALS), flagged = [], passed = [];
+  codes.forEach(function (d) {
+    var vs = ['swdi', 'fpf'].map(function (p) { return judgeOne(p, d.code, both); });
+    if (vs.some(function (v) { return EXPLAINED.indexOf(v) >= 0; })) flagged.push({ d: d, vs: vs });
+    else if (opts.pass && IND.indexOf(d) >= 0) passed.push({ d: d, vs: vs });
+  });
+  function block(x) {
+    var d = x.d, isI = IND.indexOf(d) >= 0, a = isI ? t.indicators[d.code] : null;
+    var obsCell = function (p) { var v = compareValues(p, d.code, both); return v.raw === undefined || v.raw === '' ? '<span class="muted">not entered</span>' : v.na ? 'N/A' : v.f(v.obs) + (v.weighted ? ' <span class="muted">(weighted ' + esc(v.raw) + ')</span>' : ''); };
+    var v0 = compareValues('swdi', d.code, both);
+    var out = '<div class="finding' + findingClass(x.vs.filter(Boolean)) + '"><h3>' + esc(d.code) + ' · ' + esc(d.name) + (isI ? ' <span class="muted">(' + esc(d.dim) + ' · weight ' + d.w.toFixed(4) + ' · ' + esc(d.cov) + ' · ' + esc(d.agg) + ')</span>' : '') + '</h3>' +
+      '<table><tr><th class="num">Expected · policy</th><th class="num">BRVD Stata</th><th class="num">SWDI App shows</th><th>SWDI App verdict</th><th class="num">4Ps Forward shows</th><th>4Ps Forward verdict</th></tr>' +
+      '<tr><td class="num">' + v0.f(v0.exp) + '</td><td class="num">' + v0.f(v0.stata) + '</td><td class="num">' + obsCell('swdi') + '</td><td>' + (pill(x.vs[0]) || '—') + '</td><td class="num">' + obsCell('fpf') + '</td><td>' + (pill(x.vs[1]) || '—') + '</td></tr></table>';
+    ['swdi', 'fpf'].forEach(function (p, i) { if (EXPLAINED.indexOf(x.vs[i]) >= 0) out += '<p class="lead"><b>' + PLATFORMS[p] + ' · ' + esc(x.vs[i]) + '.</b> ' + verdictLead(p, d.code, both, x.vs[i]) + '</p>'; });
+    var p = EXPLAINED.indexOf(x.vs[0]) >= 0 ? 'swdi' : EXPLAINED.indexOf(x.vs[1]) >= 0 ? 'fpf' : 'swdi';
+    out += explainBody(p, d.code, both, true);
+    if (!isI && EXPLAINED.indexOf(x.vs[0]) >= 0 && EXPLAINED.indexOf(x.vs[1]) >= 0) out += '<div class="fold"><div class="fold-h">4Ps Forward</div>' + explainBody('fpf', d.code, both, true) + '</div>';
+    return out + '</div>';
+  }
+  h += '<h2>3. Findings · ' + flagged.length + ' score' + (flagged.length === 1 ? '' : 's') + ' not passing</h2>' +
+    (flagged.length ? flagged.map(block).join('') : '<p>Every score entered matches the expected result. ' + (filled(R.obs.swdi) || filled(R.obs.fpf) ? '' : '<b>No platform scores have been entered yet.</b>') + '</p>');
+  if (passed.length) h += '<h2>3b. Indicators that passed</h2>' + passed.map(block).join('');
+
+  // 4. All scores
+  h += '<h2>4. All scores</h2><table><tr><th>Code</th><th>Indicator</th><th class="num">Expected · policy</th><th class="num">Stata</th><th class="num">SWDI App</th><th>Verdict</th><th class="num">4Ps Forward</th><th>Verdict</th></tr>' +
+    codes.map(function (d) {
+      var a = compareValues('swdi', d.code, both), b = compareValues('fpf', d.code, both);
+      var cell = function (v) { return v.raw === undefined || v.raw === '' ? '<span class="muted">—</span>' : v.na ? 'N/A' : v.f(v.obs); };
+      return '<tr><td><b>' + esc(d.code) + '</b></td><td>' + esc(d.name) + '</td><td class="num">' + a.f(a.exp) + '</td><td class="num">' + a.f(a.stata) + '</td><td class="num">' + cell(a) + '</td><td>' + pill(judgeOne('swdi', d.code, both)) + '</td><td class="num">' + cell(b) + '</td><td>' + pill(judgeOne('fpf', d.code, both)) + '</td></tr>';
+    }).join('') + '</table>' +
+    '<p class="muted">Levels are shown to 4 decimal places. Weighted scores typed on the Verify tab are converted to levels with the indicator weight. ES/SA match whichever of raw or re-scaled is closer to the observed value.</p>';
+
+  // 5. Roster, 6. notes, appendix
+  h += '<h2>5. Household roster (as listed in the SWDI App)</h2><table><tr><th>#</th><th>Name</th><th class="num">Age</th><th>Sex</th><th>Relationship</th><th>Status</th></tr>' +
+    payload.roster.map(function (m) { return '<tr><td>' + esc(m['Member #']) + '</td><td>' + esc(m.Name) + '</td><td class="num">' + esc(m.Age) + '</td><td>' + esc(m.Sex) + '</td><td>' + esc(m.Relationship) + '</td><td>' + esc(m['Member status']) + '</td></tr>'; }).join('') + '</table>';
+  h += '<h2>6. Tester notes</h2><p>' + (R.notes ? esc(R.notes).replace(/\n/g, '<br>') : '<span class="muted">None</span>') + '</p>';
+  if (opts.values) {
+    var groups = {};
+    payload.entries.forEach(function (e) { (groups[e.Member] = groups[e.Member] || []).push(e); });
+    h += '<h2>Appendix · values entered</h2>' + (payload.entries.length ? Object.keys(groups).map(function (g) {
+      return '<h3 style="margin-top:8px">' + esc(g) + '</h3><table><tr><th style="width:16%">Section</th><th>Question</th><th style="width:12%">Variable</th><th style="width:24%">Value</th></tr>' +
+        groups[g].map(function (e) { return '<tr><td>' + esc(e.Section) + '</td><td>' + esc(e.Question) + '</td><td>' + esc(e.Variable) + '</td><td>' + esc(e.Meaning || e.Value) + (e.Meaning && String(e.Meaning) !== String(e.Value) ? ' <span class="muted">(' + esc(e.Value) + ')</span>' : '') + '</td></tr>'; }).join('') + '</table>';
+    }).join('') : '<p class="muted">No values entered.</p>');
+  }
+  h += '<div class="foot">Generated by the SWDI Scoring Test Runner ' + esc(($('#appRelease') || {}).textContent || '') + ' on ' + esc(stamp) + '. Expected results come from the test runner\'s scoring engine (policy rule and BRVD Stata as written).</div></div>';
+  var doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>@page{size:A4;margin:14mm 12mm}body{margin:0}' + REC_CSS + '</style></head><body>' + h + '</body></html>';
+  return { title: title, fileName: fileName, html: h, doc: doc };
+}
+function printRecord(R, opts) {
+  var rep;
+  try { rep = recordReport(R, opts); } catch (e) { toast('Could not build the record: ' + (e.message || e), 9000); return; }
+  if (!$('#recCss')) { var st = document.createElement('style'); st.id = 'recCss'; st.textContent = REC_CSS + '#printRecord{display:none}@media print{body.print-record>*:not(#printRecord){display:none!important}body.print-record #printRecord{display:block!important}}'; document.head.appendChild(st); }
+  var box = $('#printRecord'); if (!box) { box = document.createElement('div'); box.id = 'printRecord'; document.body.appendChild(box); }
+  box.innerHTML = rep.html;
+  var oldTitle = document.title; document.title = rep.fileName;   // the browser suggests this as the PDF file name
+  document.body.classList.add('print-record');
+  var done = function () { document.body.classList.remove('print-record'); document.title = oldTitle; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  try { window.print(); } catch (e) { done(); toast('Printing is blocked here — use Download PDF', 6000); return; }
+  setTimeout(done, 1500);
+}
+function exportPdf(R, opts, target) {
+  if (!S.live) { toast('Download PDF and Google Drive upload work in the deployed web app. In this preview, use Print / Save as PDF.', 7000); return; }
+  var rep;
+  try { rep = recordReport(R, opts); } catch (e) { toast('Could not build the record: ' + (e.message || e), 9000); return; }
+  var token = beginBusy(target === 'drive' ? 'Uploading the test record to Google Drive…' : 'Preparing the PDF…');
+  call('exportRecordPdf', [rep.doc, rep.fileName, R.id || '', target, tester()], function (j) {
+    endBusy(token);
+    try {
+      var res = JSON.parse(j);
+      if (target === 'drive') {
+        R.exportLink = res.url;
+        (S.data.runs || []).forEach(function (r) { if (r['Run ID'] === R.id) r['Exported record link'] = res.url; });
+        var out = $('#xOut'); if (out) out.innerHTML = linkBox(res.url, 'Uploaded ' + res.name);
+        toast('Uploaded to Google Drive — copy the link for the issue' + (S.dirty ? '. Save the run to keep your other changes.' : ''), 6000);
+      } else {
+        var bin = atob(res.base64), bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), a = document.createElement('a');
+        a.href = url; a.download = res.name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        toast('PDF downloaded: ' + res.name, 5000);
+      }
+    } catch (e) { toast('Export failed: ' + (e.message || e), 9000); }
+  }, function (e) {
+    endBusy(token);
+    var msg = (e && e.message) || String(e), out = $('#xOut');
+    if (out) out.innerHTML = '<div class="banner warn" style="margin-top:10px">' + esc(msg) + '</div>';
+    toast('Export failed', 5000);
+  });
 }
 function parseScreen(txt) {
   var fp = SWDIFPF.parseScoreText(txt);
@@ -2640,7 +2896,8 @@ function buildPayload() {
   var run = { 'Run ID': R.id, 'Family ID (HHID)': R.fam, Mode: R.mode, Tester: tester(), 'Interview date': R.date, 'Food threshold': R.food, 'Poverty threshold': R.pov, Status: R.status, Members: R.roster.length,
     'Expected total (target)': t.total, 'Expected LOWB': t.lowb, 'Stata total': s.total, 'Stata LOWB': s.lowb, 'Rule conflicts': both.divergent.join(', '), 'N/A indicators': t.na.join(', '),
     'SWDI App total': R.obs.swdi.TOTAL || '', '4Ps Forward total': R.obs.fpf.TOTAL || '', 'Checks passed': passN, 'Checks not passed': badN, 'Scenarios exercised': t.branches.length, Notes: R.notes,
-    'Household head': householdHead(R), Environment: instanceName(R.env), '4Ps Forward link': R.fpfUrl || '', Progress: progressOf(R).text };
+    'Household head': householdHead(R), Environment: instanceName(R.env), '4Ps Forward link': R.fpfUrl || '', Progress: progressOf(R).text,
+    'SWDI App version': R.appVer || '', 'SWDI App used (date & time)': R.appAt || '', '4Ps Forward used (date & time)': R.fpfAt || '', '4Ps Forward assessment': R.fpfAssess || '', 'Exported record link': R.exportLink || '' };
   return { run: run, roster: roster, entries: entries, scores: scores, baseRevision: R.id ? R.rev : null };
 }
 function saveRun(action) {
@@ -2682,6 +2939,8 @@ function openRun(id, tab, then) {
     try {
     var d = JSON.parse(j), R = newRun();
     R.id = id; R.rev = meta.Revision === '' || meta.Revision === undefined ? null : Number(meta.Revision); R.createdBy = ownerOf(meta); R.savedBy = meta['Last saved by'] || ''; R.env = instanceName(meta.Environment); R.fpfUrl = meta['4Ps Forward link'] || '';
+    R.appVer = String(meta['SWDI App version'] || ''); R.appAt = String(meta['SWDI App used (date & time)'] || ''); R.fpfAt = String(meta['4Ps Forward used (date & time)'] || '');
+    R.fpfAssess = String(meta['4Ps Forward assessment'] || ''); R.exportLink = String(meta['Exported record link'] || '');
     R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
     var inv = function (list, label) { var L = LISTS[list]; var k = Object.keys(L).filter(function (x) { return L[x] === label; })[0]; return k ? Number(k) : 1; };
     R.roster = d.roster.sort(function (a, b) { return a['Member #'] - b['Member #']; }).map(function (r) { return { no: Number(r['Member #']), name: r.Name, age: Number(r.Age), sex: inv('sex', r.Sex), reln: inv('reln', r.Relationship), status: inv('memberstatus', r['Member status']) }; });
@@ -2718,6 +2977,9 @@ function applyCap(R, cap) {
   var o = SWDIFPF.observedFromCapture(cap), notes = [];
   R.obs.fpf = Object.assign({}, o.values); R.obs.mode.fpf = 'level';
   if (cap.env) R.env = instanceName(cap.env); if (cap.url) R.fpfUrl = cap.url;
+  if (cap.capturedAt) R.fpfAt = localStamp(new Date(cap.capturedAt));
+  var shown = [cap.period, cap.interviewDate ? 'Date ' + cap.interviewDate : '', cap.status ? 'Status ' + cap.status : '', cap.cml ? 'C/ML ' + cap.cml : '', cap.origin ? 'Origin ' + cap.origin : ''].filter(Boolean).join(' · ');
+  if (shown) R.fpfAssess = shown;
   if (STATUSES.indexOf(R.status) < 2) R.status = 'Synced — verify scores';
   notes.push('4Ps Forward scores filled from the capture of ' + esc(new Date(cap.capturedAt).toLocaleString()) + (cap.status ? ' (assessment status: ' + esc(cap.status) + ')' : '') + '. Check them against the screen, then save.');
   if (o.partial) notes.push('4Ps Forward computed only ' + o.partial.n + ' of ' + o.partial.of + ' indicators; ' + o.missing.join(', ') + ' are set to N/A — a FAIL there means the expected result has a level.');
@@ -2755,10 +3017,10 @@ function renderImport() {
   var matches = (S.data.runs || []).filter(function (r) { return fam && normFam(r['Family ID (HHID)']) === fam && sameInstance(r.Environment); });
   var openUnsaved = S.run && !S.run.id && fam && normFam(S.run.fam) === fam && sameInstance(S.run.env);
   html += '<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">Household ' + esc(cap.hhid || '(ID not found — type it below)') + '</h3><div class="small muted">' + esc([cap.env, cap.period, cap.status, cap.source].filter(Boolean).join(' · ')) + ' · captured ' + esc(new Date(cap.capturedAt).toLocaleString()) + '</div></div>' +
-    '<div><span class="big">' + fmt(sc.total, 2) + '</span> <span class="pill">Level ' + esc(sc.lowb || '?') + '</span>' + (sc.partial ? ' <span class="pill v-STATA">Partial — ' + sc.partial.n + ' of ' + sc.partial.of + '</span>' : '') + '<div class="small muted">ES ' + fmt(sc.es_rescaled) + ' · SA ' + fmt(sc.sa_rescaled) + ' (re-scaled)</div></div></div>' +
+    '<div><span class="big">' + (sc.total === null || sc.total === undefined ? '—' : dec4(sc.total)) + '</span> <span class="pill">Level ' + esc(sc.lowb || '?') + '</span>' + (sc.partial ? ' <span class="pill v-STATA">Partial — ' + sc.partial.n + ' of ' + sc.partial.of + '</span>' : '') + '<div class="small muted">ES ' + fmt(sc.es_rescaled) + ' · SA ' + fmt(sc.sa_rescaled) + ' (re-scaled)</div></div></div>' +
     (!cap.hhid ? '<label class="field" style="margin-top:8px">Family ID<input id="capFam" placeholder="13-digit household ID"></label>' : '') +
     '<details style="margin-top:8px"><summary class="small" style="cursor:pointer">' + Object.keys(ind).length + ' of 25 indicators · ' + (cap.members || []).length + ' members · ' + (cap.answers || []).length + ' answers</summary><table style="margin-top:6px"><tr><th>4Ps Forward</th><th>Indicator</th><th class="num">Level</th></tr>' +
-    Object.keys(SWDIFPF.CODE_MAP).map(function (k) { var L = SWDIFPF.CODE_MAP[k], d = IND.filter(function (x) { return x.code === L; })[0]; return '<tr><td>' + k + '</td><td><b>' + L + '</b> ' + esc(d.name) + '</td><td class="num">' + (ind[L] === undefined || ind[L] === null ? '<span class="pill v-NA">not computed</span>' : fmt(ind[L], 2)) + '</td></tr>'; }).join('') + '</table>' +
+    Object.keys(SWDIFPF.CODE_MAP).map(function (k) { var L = SWDIFPF.CODE_MAP[k], d = IND.filter(function (x) { return x.code === L; })[0]; return '<tr><td>' + k + '</td><td><b>' + L + '</b> ' + esc(d.name) + '</td><td class="num">' + (ind[L] === undefined || ind[L] === null ? '<span class="pill v-NA">not computed</span>' : lvlTxt(ind[L])) + '</td></tr>'; }).join('') + '</table>' +
     ((cap.members || []).length ? '<p class="small">Members: ' + rosterLine(cap.members) + '</p>' : '') + '</details></div>';
   html += '<div class="card"><h3>What to do with it</h3>';
   if (openUnsaved) html += '<div class="row" style="margin-bottom:8px"><button class="btn pri" id="capToOpen">Fill the run you are editing (not saved yet)</button></div>';
