@@ -194,17 +194,28 @@ function vcls(v) { return v === 'PASS' ? 'v-PASS' : v === 'FAIL' ? 'v-FAIL' : v 
 function pill(v) { return v ? '<span class="pill ' + vcls(v) + '">' + esc(v) + '</span>' : ''; }
 function store(k, v) { try { localStorage.setItem('swdi-runner-' + k, JSON.stringify(v)); } catch (e) {} }
 function load(k) { try { return JSON.parse(localStorage.getItem('swdi-runner-' + k)); } catch (e) { return null; } }
+function isAnnualTh(R) { return !!R && R.thPeriod === 'Annual'; }
+/** A threshold as the engine uses it: monthly per capita (an annual value is divided by 12). */
+function monthlyTh(R, v) { var n = num(v); return n === null ? null : isAnnualTh(R) ? n / 12 : n; }
 function th() {
   var R = S.run, c = S.data.config;
-  return R ? { food: num(R.food), poverty: num(R.pov) } : { food: num(c.food_threshold), poverty: num(c.poverty_threshold) };
+  return R ? { food: monthlyTh(R, R.food), poverty: monthlyTh(R, R.pov) } : { food: num(c.food_threshold), poverty: num(c.poverty_threshold) };
 }
+/** "Food ₱24,639.00/yr → ₱2,053.25/mo · Poverty …" — the values entered and the monthly values used for grading. */
+function thSummary(R) {
+  var one = function (label, v) {
+    var n = num(v); if (n === null) return label + ' not set';
+    return label + ' ₱' + fmt(n, 2) + (isAnnualTh(R) ? '/yr → ₱' + fmt(n / 12, 2) + '/mo' : '/mo');
+  };
+  return one('Food', R.food) + ' · ' + one('Poverty', R.pov);
+}
+function thLabel(R, which) { return which + ' threshold (' + (isAnnualTh(R) ? 'annual' : 'monthly') + ' per capita, ₱)'; }
 function updateThresholdChip() {
   var chip = $('#thChip'), R = S.run;
   if (!R || S.view !== 'run') { chip.hidden = true; chip.textContent = ''; return; }
   chip.hidden = false;
-  chip.textContent = 'Active run · Food ' + (num(R.food) === null ? 'not set' : '₱' + fmt(R.food, 2)) +
-    ' · Poverty ' + (num(R.pov) === null ? 'not set' : '₱' + fmt(R.pov, 2));
-  chip.title = 'Threshold values entered for this test run in ① Household & roster (monthly per capita); not global Config values.';
+  chip.textContent = 'Active run · ' + thSummary(R);
+  chip.title = 'Threshold values entered for this test run in ① Household & roster (' + (isAnnualTh(R) ? 'annual per capita, divided by 12 for grading' : 'monthly per capita') + '); income is graded on monthly per-capita income against the monthly values.';
 }
 function tester() { return $('#tester').value; }
 function pad2(n) { return ('0' + n).slice(-2); }
@@ -283,7 +294,7 @@ function instanceOptions(selected) {
   }).join('');
 }
 function newRun() {
-  return { id: '', fam: '', mode: 'Guided', date: today(), status: 'Draft', notes: '', food: S.data.config.food_threshold, pov: S.data.config.poverty_threshold, roster: [{ no: 1, name: '', age: '', sex: 2, reln: 1, status: 1 }],
+  return { id: '', fam: '', mode: 'Guided', date: today(), status: 'Draft', notes: '', food: S.data.config.food_threshold, pov: S.data.config.poverty_threshold, thPeriod: 'Monthly', roster: [{ no: 1, name: '', age: '', sex: 2, reln: 1, status: 1 }],
     values: { hh: {}, m: {} }, suggested: { hh: {}, m: {} }, targets: {}, obs: { swdi: {}, fpf: {}, mode: { swdi: 'level', fpf: 'level' } }, planned: false, env: '', fpfUrl: '', rev: null, createdBy: '', savedBy: '', importNote: '',
     appVer: '', appAt: '', fpfAt: '', fpfAssess: '', exportLink: '' };
 }
@@ -425,11 +436,12 @@ function tabRoster() {
   $('#tabBody').innerHTML = '<div class="card"><div class="row">' +
     '<label class="field">Family ID (HHID) from the SWDI App<input id="rFam" value="' + esc(R.fam) + '" placeholder="e.g. 166724036-1188-00010"></label>' +
     '<label class="field">Interview date<input id="rDate" type="date" value="' + esc(R.date) + '"></label>' +
-    '<label class="field">Food threshold (monthly per capita, ₱)<input id="rFood" type="number" step="0.01" value="' + esc(R.food) + '" style="min-width:120px"></label>' +
-    '<label class="field">Poverty threshold (monthly per capita, ₱)<input id="rPov" type="number" step="0.01" value="' + esc(R.pov) + '" style="min-width:120px"></label>' +
+    '<label class="field"><span id="lFood">' + thLabel(R, 'Food') + '</span><input id="rFood" type="number" step="0.01" value="' + esc(R.food) + '" style="min-width:120px"></label>' +
+    '<label class="field"><span id="lPov">' + thLabel(R, 'Poverty') + '</span><input id="rPov" type="number" step="0.01" value="' + esc(R.pov) + '" style="min-width:120px"></label>' +
+    '<div class="field">Thresholds entered as<label class="small" style="display:flex;align-items:center;gap:6px;margin-top:6px"><input id="rAnnual" type="checkbox"' + (isAnnualTh(R) ? ' checked' : '') + '> Annual (÷ 12)</label><span class="small muted" id="thUsed"></span></div>' +
     '<label class="field">Test instance<select id="rEnv"><option value="">Unspecified</option>' + instanceOptions(R.env) + '</select></label>' +
     '<div class="field">Mode<div class="seg" id="rMode"><button data-m="Guided" class="' + (R.mode === 'Guided' ? 'on' : '') + '">Guided</button><button data-m="Record" class="' + (R.mode === 'Record' ? 'on' : '') + '">Record</button></div></div></div>' +
-    '<p class="small muted" style="margin:10px 0 0">Use the SWDI IS food and poverty thresholds for this household\'s province (urban/rural) and income reference period. ' + (R.mode === 'Guided' ? '<b>Guided:</b> after the roster, the web app proposes the values to enter for each member and the household, with a preview of new family levels, member combinations and open checks for this roster.' :
+    '<p class="small muted" style="margin:10px 0 0">Use the SWDI IS food and poverty thresholds for this household\'s province (urban/rural) and income reference period. Tick <b>Annual</b> when you type yearly values: income is graded on monthly per-capita income, so annual thresholds are divided by 12. ' + (R.mode === 'Guided' ? '<b>Guided:</b> after the roster, the web app proposes the values to enter for each member and the household, with a preview of new family levels, member combinations and open checks for this roster.' :
       '<b>Record:</b> enter whatever you put in the SWDI App. The engine grades it and coverage is credited automatically.') + '</p></div>' +
     '<div class="card"><h3>Household roster — exactly as listed in the SWDI App</h3><p class="small muted">Age as computed by the app. Age drives every coverage filter (0-5, 0-17, 0-18, 3-18, 5-9, 10-64, 15+).</p>' +
     '<table class="roster"><tr><th>#</th><th style="width:30%">Name</th><th style="width:80px">Age</th><th>Sex</th><th>Relationship</th><th>Status</th><th></th></tr>' + R.roster.map(function (m, i) {
@@ -445,8 +457,16 @@ function tabRoster() {
   $('#rFam').oninput = function () { R.fam = this.value.trim(); S.dirty = true; };
   $('#rDate').oninput = function () { R.date = this.value; };
   $('#rEnv').onchange = function () { R.env = this.value; S.dirty = true; };
-  $('#rFood').oninput = function () { R.food = this.value === '' ? '' : Number(this.value); S.dirty = true; updateThresholdChip(); };
-  $('#rPov').oninput = function () { R.pov = this.value === '' ? '' : Number(this.value); S.dirty = true; updateThresholdChip(); };
+  var thShow = function () {
+    $('#lFood').textContent = thLabel(R, 'Food'); $('#lPov').textContent = thLabel(R, 'Poverty');
+    var t = th();
+    $('#thUsed').textContent = isAnnualTh(R) ? 'Graded with monthly: food ' + (t.food === null ? '—' : '₱' + fmt(t.food, 2)) + ' · poverty ' + (t.poverty === null ? '—' : '₱' + fmt(t.poverty, 2)) : 'Used as entered (monthly)';
+    updateThresholdChip();
+  };
+  thShow();
+  $('#rFood').oninput = function () { R.food = this.value === '' ? '' : Number(this.value); S.dirty = true; thShow(); };
+  $('#rPov').oninput = function () { R.pov = this.value === '' ? '' : Number(this.value); S.dirty = true; thShow(); };
+  $('#rAnnual').onchange = function () { R.thPeriod = this.checked ? 'Annual' : 'Monthly'; S.dirty = true; thShow(); };
   $$('#rMode button').forEach(function (b) { b.onclick = function () { R.mode = b.dataset.m; S.dirty = true; renderRun(); }; });
   $('#tabBody').addEventListener('input', function (e) {
     var tr = e.target.closest('tr[data-i]'); if (!tr || !e.target.dataset.k) return;
@@ -773,7 +793,7 @@ function memberTable(a, code) {
 function tabExpected() {
   var R = S.run, both = expectedFor(R), t = both.target, s = both.stata;
   var thw = th();
-  var html = (thw.food === null || thw.poverty === null ? '<div class="banner warn">Set the food and poverty thresholds in the Config tab of the sheet to grade income.</div>' : '') +
+  var html = (thw.food === null || thw.poverty === null ? '<div class="banner warn">Set the food and poverty thresholds in ① Household &amp; roster to grade income.</div>' : '') +
     '<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">Expected result (target rule)</h3><div class="small muted">Every level below shows the criterion applied. Members outside an indicator\'s age coverage are listed as excluded.</div></div>' +
     '<div class="row"><span class="pill">Raw ES ' + fmt(t.es_raw, 5) + ' (re-scaled ' + fmt(t.es_rescaled, 4) + ')</span><span class="pill">Raw SA ' + fmt(t.sa_raw, 5) + ' (re-scaled ' + fmt(t.sa_rescaled, 4) + ')</span>' +
     '<span class="pill v-CHECK" style="font-size:13px">TOTAL ' + dec4(t.total) + ' → LOWB ' + t.lowb + '</span>' + (Math.abs(t.total - s.total) > 1e-6 ? '<span class="pill v-STATA">Stata as written: ' + dec4(s.total) + ' → LOWB ' + s.lowb + '</span>' : '') + '</div></div></div>';
@@ -804,6 +824,15 @@ function avgObserved(p, except) {
     var raw = num(O[p][d.code]);
     return { code: d.code, obs: raw === null ? null : O.mode[p] === 'weighted' ? SWDI.interpretObserved(d.code, raw, 'weighted') : raw, tol: tolFor(d.code) };
   }).filter(function (o) { return o.obs !== null; });
+}
+/** ES/SA follow the "Screen shows" toggle: level → re-scaled (1-3 scale, raw ÷ dimension weight); weighted → raw weighted sum. */
+function totalName(d, mode) {
+  if (d.code !== 'ES' && d.code !== 'SA') return d.name;
+  return mode === 'weighted' ? 'Raw ' + d.code + ' score (weighted)' : d.code + ' score (level, re-scaled)';
+}
+function totalExpected(code, mode, tt) {
+  if ((code === 'ES' || code === 'SA') && mode !== 'weighted') { var x = tt[code + '_R']; return x === null || x === undefined ? '—' : dec4(x); }
+  return totTxt(code, tt[code]);
 }
 function totalsOf(r) { return { ES: r.es_raw, SA: r.sa_raw, TOTAL: r.total, LOWB: r.lowb, ES_R: r.es_rescaled, SA_R: r.sa_rescaled }; }
 function isNA(v) { return /^\s*(n\/?a|not computed|none)\s*$/i.test(String(v === undefined || v === null ? '' : v)); }
@@ -927,10 +956,10 @@ function tabVerify() {
         return '<tr><td title="' + esc(d.name) + '"><b>' + d.code + '</b> <span class="small muted">' + esc(d.name.slice(0, 32)) + '</span></td><td class="num">' + (O.mode[p] === 'weighted' ? fmt(a.weighted, 5) : lvlTxt(a.level)) + '</td>' +
           '<td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + TOTALS.map(function (d) {
-        return '<tr style="background:#f7f9fc"><td><b>' + d.name + '</b></td><td class="num">' + totTxt(d.code, tt[d.code]) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
+        return '<tr style="background:#f7f9fc"><td><b>' + totalName(d, O.mode[p]) + '</b></td><td class="num">' + totalExpected(d.code, O.mode[p], tt) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + '</table></div>';
   }
-  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison; <b>ROUNDING</b> = the policy and Stata rules agree on a family average with decimals and the platform shows it as a whole number (criteria followed, decimals dropped); when the rules disagree on the members, or the platform keeps decimals elsewhere, a whole number is graded <b>FAIL</b>. Every verdict other than PASS has a <b>Why?</b> row below it with the member responses, criteria and calculations.</div>' +
+  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled); the Expected column shows them re-scaled under <b>level</b> and raw weighted under <b>weighted score</b>. Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison; <b>ROUNDING</b> = the policy and Stata rules agree on a family average with decimals and the platform shows it as a whole number (criteria followed, decimals dropped); when the rules disagree on the members, or the platform keeps decimals elsewhere, a whole number is graded <b>FAIL</b>. Every verdict other than PASS has a <b>Why?</b> row below it with the member responses, criteria and calculations.</div>' +
     testDetailsCard(R) +
     '<div class="row noprint" style="margin-bottom:10px"><button class="btn sm" id="goImport">Import 4Ps Forward scores from the capture extension…</button>' + (R.fpfUrl ? '<a class="small" target="_blank" rel="noopener" href="' + esc(R.fpfUrl) + '">Open in 4Ps Forward ↗</a>' : '') + '</div>' +
     '<div class="grid2">' + col('swdi', 'SWDI App') + col('fpf', '4Ps Forward') + '</div>' +
@@ -1058,7 +1087,7 @@ function recordReport(R, opts) {
     th2('Run ID', val(R.id), 'Family ID (HHID)', val(R.fam)) +
     th2('Household head', val(head), 'Members', active + ' active of ' + R.roster.length + ' listed') +
     th2('Test instance', val(instanceName(R.env) || 'Unspecified'), 'Mode · status', esc(R.mode + ' · ' + R.status)) +
-    th2('Interview date', val(R.date), 'Thresholds (monthly per capita)', 'Food ' + (num(R.food) === null ? '—' : '₱' + fmt(R.food, 2)) + ' · Poverty ' + (num(R.pov) === null ? '—' : '₱' + fmt(R.pov, 2))) +
+    th2('Interview date', val(R.date), 'Thresholds (per capita)', esc(thSummary(R))) +
     th2('SWDI App version', val(R.appVer), 'SWDI App used (date &amp; time)', val(dtShow(R.appAt))) +
     th2('4Ps Forward used (date &amp; time)', val(dtShow(R.fpfAt)), '4Ps Forward assessment shown', val(R.fpfAssess)) +
     '<tr><th>4Ps Forward link</th><td colspan="3">' + link(R.fpfUrl) + '</td></tr>' +
@@ -1229,7 +1258,7 @@ function buildPayload() {
     if (row['Final verdict'] === 'PASS') passN++; else if (row['Final verdict']) badN++;
     scores.push(row);
   });
-  var run = { 'Run ID': R.id, 'Family ID (HHID)': R.fam, Mode: R.mode, Tester: tester(), 'Interview date': R.date, 'Food threshold': R.food, 'Poverty threshold': R.pov, Status: R.status, Members: R.roster.length,
+  var run = { 'Run ID': R.id, 'Family ID (HHID)': R.fam, Mode: R.mode, Tester: tester(), 'Interview date': R.date, 'Food threshold': R.food, 'Poverty threshold': R.pov, 'Threshold period': isAnnualTh(R) ? 'Annual' : 'Monthly', Status: R.status, Members: R.roster.length,
     'Expected total (target)': t.total, 'Expected LOWB': t.lowb, 'Stata total': s.total, 'Stata LOWB': s.lowb, 'Rule conflicts': both.divergent.join(', '), 'N/A indicators': t.na.join(', '),
     'SWDI App total': R.obs.swdi.TOTAL || '', '4Ps Forward total': R.obs.fpf.TOTAL || '', 'Checks passed': passN, 'Checks not passed': badN, 'Scenarios exercised': t.branches.length, Notes: R.notes,
     'Household head': householdHead(R), Environment: instanceName(R.env), '4Ps Forward link': R.fpfUrl || '', Progress: progressOf(R).text,
@@ -1278,6 +1307,7 @@ function openRun(id, tab, then) {
     R.appVer = String(meta['SWDI App version'] || ''); R.appAt = String(meta['SWDI App used (date & time)'] || ''); R.fpfAt = String(meta['4Ps Forward used (date & time)'] || '');
     R.fpfAssess = String(meta['4Ps Forward assessment'] || ''); R.exportLink = String(meta['Exported record link'] || '');
     R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
+    R.thPeriod = String(meta['Threshold period'] || '').toLowerCase() === 'annual' ? 'Annual' : 'Monthly';
     var inv = function (list, label) { var L = LISTS[list]; var k = Object.keys(L).filter(function (x) { return L[x] === label; })[0]; return k ? Number(k) : 1; };
     R.roster = d.roster.sort(function (a, b) { return a['Member #'] - b['Member #']; }).map(function (r) { return { no: Number(r['Member #']), name: r.Name, age: Number(r.Age), sex: inv('sex', r.Sex), reln: inv('reln', r.Relationship), status: inv('memberstatus', r['Member status']) }; });
     R.values = { hh: {}, m: {} }; R.suggested = { hh: {}, m: {} }; R.targets = {};

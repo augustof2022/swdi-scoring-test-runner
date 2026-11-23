@@ -10,7 +10,7 @@ var SCHEMA = {
     'Stata total', 'Stata LOWB', 'Rule conflicts', 'N/A indicators', 'SWDI App total', '4Ps Forward total', 'Checks passed', 'Checks not passed',
     'Scenarios exercised', 'Notes', 'Created at', 'Updated at',
     'Household head', 'Created by', 'Last saved by', 'Environment', '4Ps Forward link', 'Progress', 'Revision',
-    'SWDI App version', 'SWDI App used (date & time)', '4Ps Forward used (date & time)', '4Ps Forward assessment', 'Exported record link'],
+    'SWDI App version', 'SWDI App used (date & time)', '4Ps Forward used (date & time)', '4Ps Forward assessment', 'Exported record link', 'Threshold period'],
   Roster: ['Key', 'Run ID', 'Member #', 'Name', 'Age', 'Sex', 'Relationship', 'Member status'],
   Entries: ['Key', 'Run ID', 'Member #', 'Member', 'Section', 'Variable', 'Question', 'Value', 'Meaning', 'Suggested value', 'Target scenarios', 'Changed from suggestion'],
   Scores: ['Key', 'Run ID', 'Code', 'Indicator', 'Weight', 'Expected level (target)', 'Expected weighted', 'Stata level', 'Rule conflict',
