@@ -91,6 +91,16 @@ function getRun(runId) {
   return JSON.stringify({ roster: table_('Roster').filter(f), entries: table_('Entries').filter(f), scores: table_('Scores').filter(f) });
 }
 
+/** Roster, entries and scores of several runs from one read of each tab (Reports → detailed findings). runIdsJson: ["RUN-…", …]. */
+function getRuns(runIdsJson) {
+  var ids = JSON.parse(runIdsJson || '[]'), out = {};
+  ids.forEach(function (id) { out[String(id)] = { roster: [], entries: [], scores: [] }; });
+  [['Roster', 'roster'], ['Entries', 'entries'], ['Scores', 'scores']].forEach(function (t) {
+    table_(t[0]).forEach(function (r) { var id = String(r['Run ID']); if (Object.prototype.hasOwnProperty.call(out, id)) out[id][t[1]].push(r); });
+  });
+  return JSON.stringify(out);
+}
+
 function withLock_(fn) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);

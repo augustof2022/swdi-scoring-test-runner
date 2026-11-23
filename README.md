@@ -43,6 +43,12 @@ Test tool for **Enhanced SWDI scoring** in the **SWDI App** (mobile) and **4Ps F
   * Drive folder: `config.json → driveFolderId`. The sheet's Config tab can override it with a `drive_folder_id` row (folder ID or link).
   * The web app runs as the deploying account, so that account needs **Editor** access to the folder, and people who open the links need at least view access to it. After deploying this version, the owner opens the web app once and clicks **Allow** again, because it now asks for Google Drive access.
 
+## Reports
+
+* **Reports** (weekly, custom period or final) use the same layout as the exported test record. Findings are grouped by indicator and verdict, with a summary table of the runs in each group.
+* **Detailed findings** (on by default): under each finding, every run is explained the same way as in its test record: what each platform showed against the policy and Stata results, why the verdict, the member responses and the criteria. The report loads the saved answers of those runs once (one sheet read) and grades them again. A run already explained under an earlier finding (same run and indicator) points back to it. If grading the saved answers again gives a different verdict from the one saved (the rules changed since), the run says so; open the run and save it again to update the sheet.
+* **Print / Save as PDF**, **Download PDF** and **Upload PDF to Google Drive** work as for test records (same Drive folder). **Copy for Docs** pastes the report into Google Docs or Word.
+
 ## SWDI Test Capture extension
 
 A separate, read-only extension (it does not replace the SWDI CMS Assistant reviewer extension). It runs only on `4ps-dp-preprod.dswd.gov.ph` and `4ps-dp-preprod-loadtest.dswd.gov.ph`.

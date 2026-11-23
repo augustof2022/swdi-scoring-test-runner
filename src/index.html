@@ -235,6 +235,10 @@ function demoCall(fn, args, ok, fail) {
   var db = load('db') || { runs: [], roster: [], entries: [], scores: [] };
   if (fn === 'getPlanningHistory') { ok(JSON.stringify(planningRecords_(db.runs, db.scores, db.roster, db.entries, SWDICoverage.variables))); return; }
   if (fn === 'getRun') { var id = args[0], f = function (r) { return r['Run ID'] === id; }; ok(JSON.stringify({ roster: db.roster.filter(f), entries: db.entries.filter(f), scores: db.scores.filter(f) })); return; }
+  if (fn === 'getRuns') {
+    var many = {}; JSON.parse(args[0] || '[]').forEach(function (rid) { var g = function (r) { return r['Run ID'] === rid; }; many[rid] = { roster: db.roster.filter(g), entries: db.entries.filter(g), scores: db.scores.filter(g) }; });
+    ok(JSON.stringify(many)); return;
+  }
   if (fn === 'saveRun') {
     var p = JSON.parse(args[0]), run = p.run;
     if (!run['Run ID']) { var d = today().replace(/-/g, ''), n = db.runs.filter(function (r) { return String(r['Run ID']).indexOf('RUN-' + d) === 0; }).length + 1; run['Run ID'] = 'RUN-' + d + '-' + ('0' + n).slice(-2); }
@@ -1065,11 +1069,38 @@ var REC_CSS = '.rec{font:11px/1.4 Arial,Helvetica,sans-serif;color:#1d2733;backg
   '.rec .pill{display:inline-block;padding:0 6px;border-radius:8px;font-weight:bold;font-size:10px;background:#eef1f5;color:#3a4756;white-space:nowrap}' +
   '.rec .v-PASS{background:#e2f5ea;color:#1b7f4b}.rec .v-FAIL{background:#fde4e2;color:#b42318}.rec .v-STATA,.rec .v-ROUNDING{background:#fff3d6;color:#9a6200}.rec .v-NA,.rec .v-CHECK{background:#e3eefc;color:#1d5fb4}' +
   '.rec .finding{border:1px solid #cfd6df;border-left:4px solid #b42318;padding:6px 8px;margin:8px 0;page-break-inside:avoid}' +
-  '.rec .finding.amber{border-left-color:#e2a400}.rec .finding.blue{border-left-color:#1d5fb4}.rec .finding.green{border-left-color:#1b7f4b}' +
+  '.rec .finding.grp{page-break-inside:auto;break-inside:auto}.rec .frun{page-break-inside:avoid;break-inside:avoid}.rec .finding.amber{border-left-color:#e2a400}.rec .finding.blue{border-left-color:#1d5fb4}.rec .finding.green{border-left-color:#1b7f4b}' +
   '.rec .lead{background:#f7f9fc;padding:4px 6px;margin:4px 0}.rec .fold{margin:6px 0 0}.rec .fold-h{font-weight:bold;color:#1f3a5f;margin:6px 0 2px}' +
+  '.rec .small{font-size:10px}.rec ul{margin:4px 0 4px 18px;padding:0}.rec .frun{border-top:1px solid #cfd6df;margin:8px 0 0;padding:6px 0 0}.rec .frun-h{font-weight:bold;color:#1f3a5f;margin:0 0 4px}' +
   '.rec .mtab{margin:4px 0}.rec tr.ex td{color:#8a96a3}.rec .muted{color:#5d6b7a}.rec .foot{margin-top:14px;color:#5d6b7a;font-size:9.5px;border-top:1px solid #cfd6df;padding-top:4px}' +
   '.rec .warn{background:#fff3d6;color:#6d4a00;padding:4px 6px;margin:6px 0}.rec a{color:#1d5fb4;word-break:break-all}';
 function findingClass(vs) { return vs.indexOf('FAIL') >= 0 ? '' : vs.indexOf('STATA RULE') >= 0 || vs.indexOf('ROUNDING') >= 0 ? ' amber' : vs.every(function (v) { return v === 'PASS'; }) ? ' green' : ' blue'; }
+function ensureRecCss() {
+  if ($('#recCss')) return;
+  var st = document.createElement('style'); st.id = 'recCss';
+  st.textContent = REC_CSS + '#printRecord{display:none}@media print{body.print-record>*:not(#printRecord){display:none!important}body.print-record #printRecord{display:block!important}}' +
+    '@media screen{#report .rec{font-size:13px}#report .rec th,#report .rec td{font-size:12px}#report .rec h1{font-size:20px}#report .rec h2{font-size:15px}#report .rec h3{font-size:13.5px}#report .rec .pill{font-size:11px}}';
+  document.head.appendChild(st);
+}
+/** Runs fn with R as the open run: the verdict and explanation helpers read S.run (observed scores, thresholds). */
+function withRun(R, fn) { var keep = S.run; S.run = R; try { return fn(); } finally { S.run = keep; } }
+function indicatorHeading(d) {
+  var isI = IND.indexOf(d) >= 0;
+  return esc(d.code) + ' · ' + esc(d.name) + (isI ? ' <span class="muted">(' + esc(d.dim) + ' · weight ' + d.w.toFixed(4) + ' · ' + esc(d.cov) + ' · ' + esc(d.agg) + ')</span>' : '');
+}
+/** One score of the open run, fully explained: what each platform showed against the policy and Stata results, why each non-PASS verdict, the member responses and the criteria. vs = [SWDI App verdict, 4Ps Forward verdict]. */
+function findingDetail(d, vs, both) {
+  var isI = IND.indexOf(d) >= 0;
+  var obsCell = function (p) { var v = compareValues(p, d.code, both); return v.raw === undefined || v.raw === '' ? '<span class="muted">not entered</span>' : v.na ? 'N/A' : v.f(v.obs) + (v.weighted ? ' <span class="muted">(weighted ' + esc(v.raw) + ')</span>' : ''); };
+  var v0 = compareValues('swdi', d.code, both);
+  var out = '<table><tr><th class="num">Expected · policy</th><th class="num">BRVD Stata</th><th class="num">SWDI App shows</th><th>SWDI App verdict</th><th class="num">4Ps Forward shows</th><th>4Ps Forward verdict</th></tr>' +
+    '<tr><td class="num">' + v0.f(v0.exp) + '</td><td class="num">' + v0.f(v0.stata) + '</td><td class="num">' + obsCell('swdi') + '</td><td>' + (pill(vs[0]) || '—') + '</td><td class="num">' + obsCell('fpf') + '</td><td>' + (pill(vs[1]) || '—') + '</td></tr></table>';
+  ['swdi', 'fpf'].forEach(function (p, i) { if (EXPLAINED.indexOf(vs[i]) >= 0) out += '<p class="lead"><b>' + PLATFORMS[p] + ' · ' + esc(vs[i]) + '.</b> ' + verdictLead(p, d.code, both, vs[i]) + '</p>'; });
+  var p = EXPLAINED.indexOf(vs[0]) >= 0 ? 'swdi' : EXPLAINED.indexOf(vs[1]) >= 0 ? 'fpf' : 'swdi';
+  out += explainBody(p, d.code, both, true);
+  if (!isI && EXPLAINED.indexOf(vs[0]) >= 0 && EXPLAINED.indexOf(vs[1]) >= 0) out += '<div class="fold"><div class="fold-h">4Ps Forward</div>' + explainBody('fpf', d.code, both, true) + '</div>';
+  return out;
+}
 /** The printable test record: {title, fileName, html (the .rec block), doc (a complete HTML document for the PDF converter)}. */
 function recordReport(R, opts) {
   opts = opts || {};
@@ -1115,17 +1146,7 @@ function recordReport(R, opts) {
     else if (opts.pass && IND.indexOf(d) >= 0) passed.push({ d: d, vs: vs });
   });
   function block(x) {
-    var d = x.d, isI = IND.indexOf(d) >= 0, a = isI ? t.indicators[d.code] : null;
-    var obsCell = function (p) { var v = compareValues(p, d.code, both); return v.raw === undefined || v.raw === '' ? '<span class="muted">not entered</span>' : v.na ? 'N/A' : v.f(v.obs) + (v.weighted ? ' <span class="muted">(weighted ' + esc(v.raw) + ')</span>' : ''); };
-    var v0 = compareValues('swdi', d.code, both);
-    var out = '<div class="finding' + findingClass(x.vs.filter(Boolean)) + '"><h3>' + esc(d.code) + ' · ' + esc(d.name) + (isI ? ' <span class="muted">(' + esc(d.dim) + ' · weight ' + d.w.toFixed(4) + ' · ' + esc(d.cov) + ' · ' + esc(d.agg) + ')</span>' : '') + '</h3>' +
-      '<table><tr><th class="num">Expected · policy</th><th class="num">BRVD Stata</th><th class="num">SWDI App shows</th><th>SWDI App verdict</th><th class="num">4Ps Forward shows</th><th>4Ps Forward verdict</th></tr>' +
-      '<tr><td class="num">' + v0.f(v0.exp) + '</td><td class="num">' + v0.f(v0.stata) + '</td><td class="num">' + obsCell('swdi') + '</td><td>' + (pill(x.vs[0]) || '—') + '</td><td class="num">' + obsCell('fpf') + '</td><td>' + (pill(x.vs[1]) || '—') + '</td></tr></table>';
-    ['swdi', 'fpf'].forEach(function (p, i) { if (EXPLAINED.indexOf(x.vs[i]) >= 0) out += '<p class="lead"><b>' + PLATFORMS[p] + ' · ' + esc(x.vs[i]) + '.</b> ' + verdictLead(p, d.code, both, x.vs[i]) + '</p>'; });
-    var p = EXPLAINED.indexOf(x.vs[0]) >= 0 ? 'swdi' : EXPLAINED.indexOf(x.vs[1]) >= 0 ? 'fpf' : 'swdi';
-    out += explainBody(p, d.code, both, true);
-    if (!isI && EXPLAINED.indexOf(x.vs[0]) >= 0 && EXPLAINED.indexOf(x.vs[1]) >= 0) out += '<div class="fold"><div class="fold-h">4Ps Forward</div>' + explainBody('fpf', d.code, both, true) + '</div>';
-    return out + '</div>';
+    return '<div class="finding' + findingClass(x.vs.filter(Boolean)) + '"><h3>' + indicatorHeading(x.d) + '</h3>' + findingDetail(x.d, x.vs, both) + '</div>';
   }
   h += '<h2>3. Findings · ' + flagged.length + ' score' + (flagged.length === 1 ? '' : 's') + ' not passing</h2>' +
     (flagged.length ? flagged.map(block).join('') : '<p>Every score entered matches the expected result. ' + (filled(R.obs.swdi) || filled(R.obs.fpf) ? '' : '<b>No platform scores have been entered yet.</b>') + '</p>');
@@ -1159,7 +1180,7 @@ function recordReport(R, opts) {
 function printRecord(R, opts) {
   var rep;
   try { rep = recordReport(R, opts); } catch (e) { toast('Could not build the record: ' + (e.message || e), 9000); return; }
-  if (!$('#recCss')) { var st = document.createElement('style'); st.id = 'recCss'; st.textContent = REC_CSS + '#printRecord{display:none}@media print{body.print-record>*:not(#printRecord){display:none!important}body.print-record #printRecord{display:block!important}}'; document.head.appendChild(st); }
+  ensureRecCss();
   var box = $('#printRecord'); if (!box) { box = document.createElement('div'); box.id = 'printRecord'; document.body.appendChild(box); }
   box.innerHTML = rep.html;
   var oldTitle = document.title; document.title = rep.fileName;   // the browser suggests this as the PDF file name
@@ -1169,20 +1190,16 @@ function printRecord(R, opts) {
   try { window.print(); } catch (e) { done(); toast('Printing is blocked here — use Download PDF', 6000); return; }
   setTimeout(done, 1500);
 }
-function exportPdf(R, opts, target) {
-  if (!S.live) { toast('Download PDF and Google Drive upload work in the deployed web app. In this preview, use Print / Save as PDF.', 7000); return; }
-  var rep;
-  try { rep = recordReport(R, opts); } catch (e) { toast('Could not build the record: ' + (e.message || e), 9000); return; }
-  var token = beginBusy(target === 'drive' ? 'Uploading the test record to Google Drive…' : 'Preparing the PDF…');
-  call('exportRecordPdf', [rep.doc, rep.fileName, R.id || '', target, tester()], function (j) {
+/** Converts a built record/report ({doc, fileName}) to PDF on the server; downloads it, or uploads it to Drive and shows the link in outSel. */
+function sendPdf(rep, runId, target, outSel, onUploaded) {
+  var token = beginBusy(target === 'drive' ? 'Uploading the PDF to Google Drive…' : 'Preparing the PDF…');
+  call('exportRecordPdf', [rep.doc, rep.fileName, runId || '', target, tester()], function (j) {
     endBusy(token);
     try {
       var res = JSON.parse(j);
       if (target === 'drive') {
-        R.exportLink = res.url;
-        (S.data.runs || []).forEach(function (r) { if (r['Run ID'] === R.id) r['Exported record link'] = res.url; });
-        var out = $('#xOut'); if (out) out.innerHTML = linkBox(res.url, 'Uploaded ' + res.name);
-        toast('Uploaded to Google Drive — copy the link for the issue' + (S.dirty ? '. Save the run to keep your other changes.' : ''), 6000);
+        var out = $(outSel); if (out) out.innerHTML = linkBox(res.url, 'Uploaded ' + res.name);
+        if (onUploaded) onUploaded(res); else toast('Uploaded to Google Drive — copy the link to share it', 6000);
       } else {
         var bin = atob(res.base64), bytes = new Uint8Array(bin.length);
         for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -1194,9 +1211,20 @@ function exportPdf(R, opts, target) {
     } catch (e) { toast('Export failed: ' + (e.message || e), 9000); }
   }, function (e) {
     endBusy(token);
-    var msg = (e && e.message) || String(e), out = $('#xOut');
+    var msg = (e && e.message) || String(e), out = $(outSel);
     if (out) out.innerHTML = '<div class="banner warn" style="margin-top:10px">' + esc(msg) + '</div>';
     toast('Export failed', 5000);
+  });
+}
+var PREVIEW_PDF_MSG = 'Download PDF and Google Drive upload work in the deployed web app. In this preview, use Print / Save as PDF.';
+function exportPdf(R, opts, target) {
+  if (!S.live) { toast(PREVIEW_PDF_MSG, 7000); return; }
+  var rep;
+  try { rep = recordReport(R, opts); } catch (e) { toast('Could not build the record: ' + (e.message || e), 9000); return; }
+  sendPdf(rep, R.id, target, '#xOut', function (res) {
+    R.exportLink = res.url;
+    (S.data.runs || []).forEach(function (r) { if (r['Run ID'] === R.id) r['Exported record link'] = res.url; });
+    toast('Uploaded to Google Drive — copy the link for the issue' + (S.dirty ? '. Save the run to keep your other changes.' : ''), 6000);
   });
 }
 function parseScreen(txt) {
@@ -1297,31 +1325,36 @@ function saveRun(action) {
     } catch (e) { failure(e); }
   }, failure);
 }
+/** A run object (as the Run tabs use it) from its Runs row and its saved roster / entries / scores rows. */
+function runFromSaved(meta, d) {
+  var id = meta['Run ID'], R = newRun();
+  R.id = id; R.rev = meta.Revision === '' || meta.Revision === undefined ? null : Number(meta.Revision); R.createdBy = ownerOf(meta); R.savedBy = meta['Last saved by'] || ''; R.env = instanceName(meta.Environment); R.fpfUrl = meta['4Ps Forward link'] || '';
+  R.appVer = String(meta['SWDI App version'] || ''); R.appAt = String(meta['SWDI App used (date & time)'] || ''); R.fpfAt = String(meta['4Ps Forward used (date & time)'] || '');
+  R.fpfAssess = String(meta['4Ps Forward assessment'] || ''); R.exportLink = String(meta['Exported record link'] || '');
+  R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
+  R.thPeriod = String(meta['Threshold period'] || '').toLowerCase() === 'annual' ? 'Annual' : 'Monthly';
+  var inv = function (list, label) { var L = LISTS[list]; var k = Object.keys(L).filter(function (x) { return L[x] === label; })[0]; return k ? Number(k) : 1; };
+  R.roster = d.roster.sort(function (a, b) { return a['Member #'] - b['Member #']; }).map(function (r) { return { no: Number(r['Member #']), name: r.Name, age: Number(r.Age), sex: inv('sex', r.Sex), reln: inv('reln', r.Relationship), status: inv('memberstatus', r['Member status']) }; });
+  R.values = { hh: {}, m: {} }; R.suggested = { hh: {}, m: {} }; R.targets = {};
+  R.roster.forEach(function (m) { R.values.m[m.no] = {}; R.suggested.m[m.no] = {}; });
+  d.entries.forEach(function (e) {
+    var no = Number(e['Member #']), tgt = no === 0 ? R.values.hh : (R.values.m[no] = R.values.m[no] || {}), sg = no === 0 ? R.suggested.hh : (R.suggested.m[no] = R.suggested.m[no] || {});
+    tgt[e.Variable] = e.Value; if (e['Suggested value'] !== undefined && (e['Suggested value'] !== '' || R.mode === 'Guided' && e['Target scenarios'])) sg[e.Variable] = e['Suggested value'];
+    if (e['Target scenarios']) R.targets[no + '|' + e.Variable] = readTargetIds(e['Target scenarios']);
+  });
+  R.planned = R.mode === 'Guided';
+  d.scores.forEach(function (sc) {
+    if (sc['SWDI App observed (level)'] !== '' && sc['SWDI App observed (level)'] !== undefined) R.obs.swdi[sc.Code] = sc['SWDI App observed (level)'];
+    if (sc['4Ps Forward observed (level)'] !== '' && sc['4Ps Forward observed (level)'] !== undefined) R.obs.fpf[sc.Code] = sc['4Ps Forward observed (level)'];
+  });
+  return R;
+}
 function openRun(id, tab, then) {
   var meta = (S.data.runs || []).filter(function (r) { return r['Run ID'] === id; })[0]; if (!meta) return;
   var token = beginBusy('Loading test record ' + id + '…');
   call('getRun', [id], function (j) {
     try {
-    var d = JSON.parse(j), R = newRun();
-    R.id = id; R.rev = meta.Revision === '' || meta.Revision === undefined ? null : Number(meta.Revision); R.createdBy = ownerOf(meta); R.savedBy = meta['Last saved by'] || ''; R.env = instanceName(meta.Environment); R.fpfUrl = meta['4Ps Forward link'] || '';
-    R.appVer = String(meta['SWDI App version'] || ''); R.appAt = String(meta['SWDI App used (date & time)'] || ''); R.fpfAt = String(meta['4Ps Forward used (date & time)'] || '');
-    R.fpfAssess = String(meta['4Ps Forward assessment'] || ''); R.exportLink = String(meta['Exported record link'] || '');
-    R.fam = meta['Family ID (HHID)']; R.mode = meta.Mode || 'Record'; R.date = String(meta['Interview date'] || '').slice(0, 10); R.status = meta.Status || 'Draft'; R.notes = meta.Notes || ''; if (meta['Food threshold'] !== '' && meta['Food threshold'] !== undefined) { R.food = meta['Food threshold']; R.pov = meta['Poverty threshold']; }
-    R.thPeriod = String(meta['Threshold period'] || '').toLowerCase() === 'annual' ? 'Annual' : 'Monthly';
-    var inv = function (list, label) { var L = LISTS[list]; var k = Object.keys(L).filter(function (x) { return L[x] === label; })[0]; return k ? Number(k) : 1; };
-    R.roster = d.roster.sort(function (a, b) { return a['Member #'] - b['Member #']; }).map(function (r) { return { no: Number(r['Member #']), name: r.Name, age: Number(r.Age), sex: inv('sex', r.Sex), reln: inv('reln', r.Relationship), status: inv('memberstatus', r['Member status']) }; });
-    R.values = { hh: {}, m: {} }; R.suggested = { hh: {}, m: {} }; R.targets = {};
-    R.roster.forEach(function (m) { R.values.m[m.no] = {}; R.suggested.m[m.no] = {}; });
-    d.entries.forEach(function (e) {
-      var no = Number(e['Member #']), tgt = no === 0 ? R.values.hh : (R.values.m[no] = R.values.m[no] || {}), sg = no === 0 ? R.suggested.hh : (R.suggested.m[no] = R.suggested.m[no] || {});
-      tgt[e.Variable] = e.Value; if (e['Suggested value'] !== undefined && (e['Suggested value'] !== '' || R.mode === 'Guided' && e['Target scenarios'])) sg[e.Variable] = e['Suggested value'];
-      if (e['Target scenarios']) R.targets[no + '|' + e.Variable] = readTargetIds(e['Target scenarios']);
-    });
-    R.planned = R.mode === 'Guided';
-    d.scores.forEach(function (sc) {
-      if (sc['SWDI App observed (level)'] !== '' && sc['SWDI App observed (level)'] !== undefined) R.obs.swdi[sc.Code] = sc['SWDI App observed (level)'];
-      if (sc['4Ps Forward observed (level)'] !== '' && sc['4Ps Forward observed (level)'] !== undefined) R.obs.fpf[sc.Code] = sc['4Ps Forward observed (level)'];
-    });
+    var R = runFromSaved(meta, JSON.parse(j));
     S.run = R; S.view = 'run'; S.tab = tab || resumeTab(meta); S.dirty = false; if (then) then(R); route();
     } catch (e) { toast('Could not open test record: ' + (e.message || e), 9000); }
     finally { endBusy(token); }
@@ -1443,7 +1476,7 @@ function buildReport(from, to, kind, instance) {
     var a = num(s['SWDI App observed (level)']), b = num(s['4Ps Forward observed (level)']);
     if (a !== null && b !== null && Math.abs(a - b) > 0.01) {
       var k2 = s.Code + '|PLATFORMS DIFFER', g2 = groups[k2] = groups[k2] || { code: s.Code, name: s.Indicator, verdict: 'PLATFORMS DIFFER', items: [], platforms: { 'SWDI App': 1, '4Ps Forward': 1 } };
-      g2.items.push({ run: s['Run ID'], platform: 'both', expected: s['Expected level (target)'], observed: 'App ' + a + ' / 4Ps Forward ' + b, why: s['How graded (target)'] });
+      g2.items.push({ run: s['Run ID'], platform: 'both', expected: s['Expected level (target)'], stata: s['Stata level'], observed: 'App ' + a + ' / 4Ps Forward ' + b, why: s['How graded (target)'] });
     }
   });
   var findings = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (x, y) { return (SEV[x.verdict] || 5) - (SEV[y.verdict] || 5) || x.code.localeCompare(y.code); });
@@ -1470,73 +1503,163 @@ function buildReport(from, to, kind, instance) {
   return { instance: instance, kind: kind, from: from, to: to, runs: runs, runsAll: runsAll, exe: exe, count: count, findings: findings, perInd: perInd, newly: newly.filter(function (id) { return catIds[id]; }).length,
     covered: covered, total: SC.length, missing: missing, openRules: openRules, naChecks: naChecks, verified4pf: runs.filter(function (r) { return r.Status === 'Verified in 4Ps Forward'; }).length };
 }
+/** Saved runs re-graded for the detailed findings, keyed by Run ID: {rev, R, both} or {rev, err}. A newer save (revision) reloads the run. */
+var REP_RUNS = {};
+function runMeta(id) { return (S.data.runs || []).filter(function (r) { return r['Run ID'] === id; })[0]; }
+function revOf(m) { return m && m.Revision !== undefined && m.Revision !== null ? String(m.Revision) : ''; }
+function repRunEntry(id) { var m = runMeta(id), e = REP_RUNS[id]; return m && e && e.rev === revOf(m) ? e : null; }
+function reportDetailIds(R) {
+  var ids = [];
+  R.findings.forEach(function (f) { if (f.verdict === 'N/A CHECK') return; f.items.forEach(function (x) { if (ids.indexOf(x.run) < 0 && runMeta(x.run)) ids.push(x.run); }); });
+  return ids;
+}
+function cacheReportRuns(data) {
+  Object.keys(data).forEach(function (id) {
+    var meta = runMeta(id); if (!meta) return;
+    var rev = revOf(meta);
+    try {
+      var d = data[id]; if (!d.roster.length) throw new Error('no roster saved');
+      var R = runFromSaved(meta, d);
+      REP_RUNS[id] = { rev: rev, R: R, both: withRun(R, function () { return expectedFor(R); }) };
+    } catch (e) { REP_RUNS[id] = { rev: rev, err: e.message || String(e) }; }
+  });
+}
+function reportTitle(R) {
+  var final = R.kind === 'final', inst = R.instance === 'both' ? 'both test instances' : R.instance === 'unspecified' ? 'unspecified instance' : R.instance || '';
+  return 'SWDI ' + (final ? 'final report' : 'weekly report ' + R.from + ' to ' + R.to) + (inst ? ' - ' + inst : '') + ' - ' + localStamp(new Date()).replace(':', '');
+}
 function renderReports() {
-  var st = S.rep = S.rep || { preset: 'this', from: weekRange(0)[0], to: weekRange(0)[1] };
-  $('#main').innerHTML = '<div class="row noprint" style="justify-content:space-between;align-items:flex-end"><div><h2>Reports</h2><div class="muted small">Weekly progress and findings, or the final report over all runs. Print to PDF or copy into Google Docs/Word.</div></div>' +
+  var st = S.rep = S.rep || { preset: 'this', from: weekRange(0)[0], to: weekRange(0)[1], detail: true };
+  if (st.detail === undefined) st.detail = true;
+  ensureRecCss();
+  $('#main').innerHTML = '<div class="row noprint" style="justify-content:space-between;align-items:flex-end"><div><h2>Reports</h2><div class="muted small">Weekly progress and findings, or the final report over all runs. Each finding explains every run the same way as the exported test record. Save as PDF, upload to Google Drive, or copy into Google Docs/Word.</div></div>' +
     '<div class="row"><label>Test instance <select id="repInstance" class="btn sm"><option value="">All runs</option><option value="both">Both test instances</option>' + instanceOptions(st.instance) + '<option value="unspecified">Unspecified</option></select></label><div class="seg" id="repPreset">' + [['this', 'This week'], ['last', 'Last week'], ['custom', 'Custom'], ['all', 'Final (all runs)']].map(function (p) { return '<button data-p="' + p[0] + '" class="' + (st.preset === p[0] ? 'on' : '') + '">' + p[1] + '</button>'; }).join('') + '</div>' +
-    (st.preset === 'custom' ? '<input type="date" id="repFrom" class="btn sm" value="' + st.from + '"><input type="date" id="repTo" class="btn sm" value="' + st.to + '">' : '') +
-    '<button class="btn" id="repCopy">Copy for Docs</button><button class="btn pri" id="repPrint">Print / Save PDF</button></div></div><div id="report" class="card" style="margin-top:12px"></div>';
+    (st.preset === 'custom' ? '<input type="date" id="repFrom" class="btn sm" value="' + st.from + '"><input type="date" id="repTo" class="btn sm" value="' + st.to + '">' : '') + '</div></div>' +
+    '<div class="row noprint" style="margin-top:10px;justify-content:space-between"><label class="small"><input type="checkbox" id="repDetail"' + (st.detail ? ' checked' : '') + '> Detailed findings (member responses, criteria and the reason for each verdict, per run)</label>' +
+    '<div class="row"><button class="btn" id="repCopy">Copy for Docs</button><button class="btn" id="repPrint">Print / Save as PDF</button><button class="btn" id="repDownload">Download PDF</button><button class="btn pri" id="repDrive">Upload PDF to Google Drive</button></div></div>' +
+    '<div id="repOut" class="noprint"></div><div id="report" class="card" style="margin-top:12px"></div>';
   $('#repInstance').value = st.instance || '';
   $('#repInstance').onchange = function () { st.instance = this.value; renderReports(); };
+  $('#repDetail').onchange = function () { st.detail = this.checked; drawReport(); };
   $$('#repPreset button').forEach(function (b) { b.onclick = function () {
     st.preset = b.dataset.p;
     if (st.preset === 'this') { var w = weekRange(0); st.from = w[0]; st.to = w[1]; } else if (st.preset === 'last') { var l = weekRange(-1); st.from = l[0]; st.to = l[1]; } else if (st.preset === 'all') { st.from = ''; st.to = ''; }
     renderReports(); }; });
   if ($('#repFrom')) { $('#repFrom').onchange = function () { st.from = this.value; renderReports(); }; $('#repTo').onchange = function () { st.to = this.value; renderReports(); }; }
-  $('#repPrint').onclick = function () { try { window.print(); } catch (e) { toast('Printing is blocked here — use Copy for Docs'); } };
+  $('#repPrint').onclick = function () { if (st.loading) { toast('The detailed findings are still loading'); return; } try { window.print(); } catch (e) { toast('Printing is blocked here — use Download PDF'); } };
+  var pdf = function (target) {
+    if (!S.live) { toast(PREVIEW_PDF_MSG, 7000); return; }
+    if (st.loading) { toast('The detailed findings are still loading'); return; }
+    var rep = st.last, html = $('#report').innerHTML;
+    sendPdf({ fileName: reportTitle(rep), doc: '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(reportTitle(rep)) + '</title><style>@page{size:A4;margin:14mm 12mm}body{margin:0}' + REC_CSS + '</style></head><body>' + html + '</body></html>' }, '', target, '#repOut');
+  };
+  $('#repDownload').onclick = function () { pdf('download'); };
+  $('#repDrive').onclick = function () { pdf('drive'); };
+  $('#repOut').addEventListener('click', function (e) { if (e.target.hasAttribute('data-copy')) copyLink(e.target.parentElement.querySelector('input')); });
   $('#repCopy').onclick = function () {
     var el = $('#report'), html = el.innerHTML;
     var done = function () { toast('Report copied — paste into Google Docs or Word'); };
     try {
-      if (navigator.clipboard && window.ClipboardItem) { navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([el.innerText], { type: 'text/plain' }) })]).then(done, fallback); }
+      if (navigator.clipboard && window.ClipboardItem) { navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob(['<style>' + REC_CSS + '</style>' + html], { type: 'text/html' }), 'text/plain': new Blob([el.innerText], { type: 'text/plain' }) })]).then(done, fallback); }
       else fallback();
     } catch (e) { fallback(); }
     function fallback() { var r = document.createRange(); r.selectNodeContents(el); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); try { document.execCommand('copy'); done(); } catch (e) { toast('Select the report and copy it manually'); } s.removeAllRanges(); }
   };
-  $('#report').innerHTML = reportHTML(buildReport(st.from, st.to, st.preset === 'all' ? 'final' : 'weekly', st.instance));
+  drawReport();
 }
-function reportHTML(R) {
+/** Builds the report; with detailed findings on, loads (once per saved revision) the runs it needs, then draws again. */
+function drawReport() {
+  var st = S.rep, rep = st.last = buildReport(st.from, st.to, st.preset === 'all' ? 'final' : 'weekly', st.instance);
+  var missing = st.detail ? reportDetailIds(rep).filter(function (id) { return !repRunEntry(id); }) : [];
+  st.loading = missing.length > 0;
+  $('#report').innerHTML = reportHTML(rep, { on: st.detail, loading: st.loading, get: repRunEntry });
+  if (!missing.length) return;
+  var ask = st.ask = (st.ask || 0) + 1;
+  call('getRuns', [JSON.stringify(missing)], function (j) {
+    try { cacheReportRuns(JSON.parse(j)); } catch (e) { missing.forEach(function (id) { REP_RUNS[id] = { rev: revOf(runMeta(id)), err: e.message || String(e) }; }); }
+    missing.forEach(function (id) { if (!repRunEntry(id)) { REP_RUNS[id] = { rev: revOf(runMeta(id)), err: 'the run was not found in the sheet' }; } });
+    if (ask === st.ask && S.view === 'reports' && $('#report')) drawReport();
+  }, function (e) {
+    missing.forEach(function (id) { REP_RUNS[id] = { rev: revOf(runMeta(id)), err: (e && e.message) || String(e) }; });
+    if (ask === st.ask && S.view === 'reports' && $('#report')) drawReport();
+  });
+}
+var VERDICT_MEANING = {
+  'FAIL': 'Platform score matches neither the DSWD target rule nor the Stata command as written.',
+  'STATA RULE': 'The observed score matches the BRVD Stata comparison: the DSWD-requested rule change is not implemented.',
+  'ROUNDING': 'The policy and Stata rules agree on the family average (criteria followed); the platform rounds or truncates it to a whole level instead of keeping the decimals.',
+  'PLATFORMS DIFFER': 'SWDI App and 4Ps Forward show different values for the same assessment.'
+};
+/** One run inside a finding group, explained in full (the same block as the exported test record). */
+function reportRunBlock(f, id, det, label, explained) {
+  var meta = runMeta(id) || {}, items = f.items.filter(function (x) { return x.run === id; });
+  var head = '<div class="frun-h">' + esc(id) + ' · Family ID ' + esc(meta['Family ID (HHID)'] || '—') + (meta['Household head'] ? ' · ' + esc(meta['Household head']) : '') +
+    ' · ' + esc(instanceName(meta.Environment) || 'Unspecified instance') + (runDate(meta) ? ' · ' + esc(runDate(meta)) : '') + (meta.Tester ? ' · ' + esc(meta.Tester) : '') + '</div>';
+  var e = det.get(id), d = IND.concat(TOTALS).filter(function (x) { return x.code === f.code; })[0];
+  if (!d) return '';
+  if (!e) return '<div class="frun">' + head + '<p class="muted">' + (det.loading ? 'Loading the saved answers to explain this run…' : 'Not loaded.') + '</p></div>';
+  if (e.err) return '<div class="frun">' + head + '<p class="warn">Could not re-grade this run from its saved answers (' + esc(e.err) + '). Open the run to see its explanation.</p></div>';
+  var key = id + '|' + f.code;
+  if (explained[key]) return '<div class="frun">' + head + '<p class="muted">Explained in full under ' + explained[key] + ' above (same run and indicator, both platforms).</p></div>';
+  explained[key] = label;
+  return '<div class="frun">' + head + withRun(e.R, function () {
+    var vs = ['swdi', 'fpf'].map(function (p) { return judgeOne(p, f.code, e.both); }), note = '';
+    if (f.verdict !== 'PLATFORMS DIFFER') items.forEach(function (x) {
+      var now = vs[x.platform === 'SWDI App' ? 0 : 1];
+      if (now !== f.verdict) note += '<p class="warn">Saved as <b>' + esc(f.verdict) + '</b> on ' + esc(x.platform) + '; re-graded from the saved answers with the current rules it is <b>' + esc(now || 'not graded') + '</b>. Open the run and save it again to update the sheet.</p>';
+    });
+    return note + findingDetail(d, vs, e.both);
+  }) + '</div>';
+}
+function reportHTML(R, det) {
+  det = det || { on: false, get: function () { return null; } };
   var c = S.data.config, final = R.kind === 'final';
   var period = final ? 'All runs to date' : R.from + ' to ' + R.to;
   var pct = function (a, b) { return b ? Math.round(100 * a / b) + '%' : '—'; };
-  var h = '<h2 style="margin-bottom:2px">' + (final ? 'SWDI Scoring Test — Final report' : 'SWDI Scoring Test — Weekly report') + '</h2>' +
-    '<div class="muted small">Period: <b>' + esc(period) + '</b> · Test instance: ' + esc(R.instance === 'both' ? testInstances.join(' and ') : R.instance || 'All runs') + ' · Generated ' + esc(today()) + (tester() ? ' by ' + esc(tester()) : '') + (c.app_version ? ' · SWDI App build ' + esc(c.app_version) : '') + '</div>';
-  h += '<h3 style="margin-top:16px">1. Summary</h3><table class="rep"><tr><td>Test runs (interviews) in period</td><td class="num"><b>' + R.runs.length + '</b></td><td>Cumulative runs</td><td class="num"><b>' + R.runsAll.length + '</b></td></tr>' +
+  var h = '<div class="rec"><h1>' + (final ? 'SWDI Scoring Test — Final report' : 'SWDI Scoring Test — Weekly report') + '</h1>' +
+    '<p class="sub">Period: <b>' + esc(period) + '</b> · Test instance: ' + esc(R.instance === 'both' ? testInstances.join(' and ') : R.instance === 'unspecified' ? 'Unspecified' : R.instance || 'All runs') + ' · Generated ' + esc(localStamp(new Date())) + (tester() ? ' by ' + esc(tester()) : '') + (c.app_version ? ' · SWDI App build ' + esc(c.app_version) : '') + '</p>';
+  h += '<h2>1. Summary</h2><table><tr><td>Test runs (interviews) in period</td><td class="num"><b>' + R.runs.length + '</b></td><td>Cumulative runs</td><td class="num"><b>' + R.runsAll.length + '</b></td></tr>' +
     '<tr><td>Runs verified in 4Ps Forward</td><td class="num">' + R.verified4pf + '</td><td>Indicator checks executed</td><td class="num">' + R.exe.length + '</td></tr>' +
-    '<tr><td>PASS</td><td class="num">' + R.count(R.exe, 'PASS') + ' (' + pct(R.count(R.exe, 'PASS'), R.exe.length) + ')</td><td>FAIL</td><td class="num">' + R.count(R.exe, 'FAIL') + '</td></tr>' +
-    '<tr><td>STATA RULE (matches BRVD comparison)</td><td class="num">' + R.count(R.exe, 'STATA RULE') + '</td><td>ROUNDING</td><td class="num">' + R.count(R.exe, 'ROUNDING') + '</td></tr>' +
+    '<tr><td>' + pill('PASS') + '</td><td class="num">' + R.count(R.exe, 'PASS') + ' (' + pct(R.count(R.exe, 'PASS'), R.exe.length) + ')</td><td>' + pill('FAIL') + '</td><td class="num">' + R.count(R.exe, 'FAIL') + '</td></tr>' +
+    '<tr><td>' + pill('STATA RULE') + ' (matches BRVD comparison)</td><td class="num">' + R.count(R.exe, 'STATA RULE') + '</td><td>' + pill('ROUNDING') + '</td><td class="num">' + R.count(R.exe, 'ROUNDING') + '</td></tr>' +
     '<tr><td>Scenario coverage (cumulative)</td><td class="num">' + R.covered + ' / ' + R.total + ' (' + pct(R.covered, R.total) + ')</td><td>' + (final ? 'Not yet covered' : 'New scenarios this period') + '</td><td class="num">' + (final ? R.missing.length : R.newly) + '</td></tr></table>';
-  var sev = R.findings.filter(function (f) { return f.verdict !== 'N/A CHECK'; });
-  h += '<h3 style="margin-top:16px">2. Findings (' + sev.length + ')</h3>';
+  var sev = R.findings.filter(function (f) { return f.verdict !== 'N/A CHECK'; }), explained = {};
+  h += '<h2>2. Findings · ' + sev.length + '</h2>';
   if (!sev.length) h += '<p class="muted">No mismatches in this period.</p>';
+  else h += '<p class="muted">Grouped by indicator and verdict. ' + (det.on ? 'Under each finding, every run is explained in full: what each platform showed against the policy and Stata results, why the verdict, the member responses and the criteria.' : 'Tick <b>Detailed findings</b> to explain every run in full.') + '</p>';
   sev.forEach(function (f, i) {
     var runs = f.items.map(function (x) { return x.run; }).filter(function (x, j, a) { return a.indexOf(x) === j; });
-    var meaning = f.verdict === 'FAIL' ? 'Platform score matches neither the DSWD target rule nor the Stata command as written.' : f.verdict === 'STATA RULE' ? 'The observed score matches the BRVD Stata comparison.' + (STATA_NOTES[f.code] ? ' ' + STATA_NOTES[f.code] : '') :
-      f.verdict === 'ROUNDING' ? 'The policy and Stata rules agree on the family average (criteria followed); the platform rounds or truncates it to a whole level instead of keeping the decimals.' : 'SWDI App and 4Ps Forward show different values for the same assessment.';
-    h += '<div class="finding"><b>F' + (i + 1) + '. ' + f.code + ' — ' + esc(f.name) + '</b> <span class="pill ' + vcls(f.verdict) + '">' + esc(f.verdict) + '</span> <span class="small muted">' + runs.length + ' run(s) · ' + Object.keys(f.platforms).join(', ') + '</span>' +
-      '<div class="small" style="margin:4px 0">' + esc(meaning) + '</div><table class="rep small"><tr><th>Run</th><th>Platform</th><th class="num">Expected</th><th class="num">Stata</th><th class="num">Observed</th><th>How the expected level was graded</th></tr>' +
-      f.items.slice(0, 8).map(function (x) { return '<tr><td>' + esc(x.run) + '</td><td>' + esc(x.platform) + '</td><td class="num">' + lvlTxt(x.expected) + '</td><td class="num">' + (x.stata === undefined || x.stata === '' ? '—' : lvlTxt(x.stata)) + '</td><td class="num">' + esc(x.observed) + '</td><td>' + (f.verdict === 'STATA RULE' ? esc(x.why || '') + '<div>' + esc(x.stataWhy || '') + '</div><div style="white-space:pre-line">' + esc(x.memberEvidence || '') + '</div>' : esc(String(x.why || '').slice(0, 220))) + '</td></tr>'; }).join('') +
-      (f.items.length > 8 ? '<tr><td colspan="6" class="muted">… ' + (f.items.length - 8) + ' more</td></tr>' : '') + '</table></div>';
+    var isTot = IND.every(function (d) { return d.code !== f.code; }), fv = function (v) { return v === undefined || v === '' ? '—' : isTot ? totTxt(f.code, v) : lvlTxt(v); };
+    var meaning = (VERDICT_MEANING[f.verdict] || '') + (f.verdict === 'STATA RULE' && STATA_NOTES[f.code] ? ' ' + STATA_NOTES[f.code] : '');
+    h += '<div class="finding grp' + findingClass([f.verdict]) + '"><h3>F' + (i + 1) + '. ' + esc(f.code) + ' · ' + esc(f.name) + ' ' + '<span class="pill ' + vcls(f.verdict) + '">' + esc(f.verdict) + '</span> <span class="muted">' + runs.length + ' run' + (runs.length === 1 ? '' : 's') + ' · ' + Object.keys(f.platforms).join(', ') + '</span></h3>' +
+      '<p class="lead">' + esc(meaning) + '</p>' +
+      '<table><tr><th>Run</th><th>Family ID</th><th>Platform</th><th class="num">Expected · policy</th><th class="num">BRVD Stata</th><th class="num">Observed</th>' + (det.on ? '' : '<th>How the expected level was graded</th>') + '</tr>' +
+      f.items.map(function (x) {
+        var m = runMeta(x.run) || {};
+        return '<tr><td>' + esc(x.run) + '</td><td>' + esc(m['Family ID (HHID)'] || '') + '</td><td>' + esc(x.platform) + '</td><td class="num">' + fv(x.expected) + '</td><td class="num">' + fv(x.stata) + '</td><td class="num">' + (x.platform === 'both' ? esc(x.observed) : fv(x.observed)) + '</td>' +
+          (det.on ? '' : '<td>' + esc(x.why || '') + (x.stataWhy ? '<div><b>Stata:</b> ' + esc(x.stataWhy) + '</div>' : '') + (x.memberEvidence ? '<div style="white-space:pre-line">' + esc(x.memberEvidence) + '</div>' : '') + '</td>') + '</tr>';
+      }).join('') + '</table>' +
+      (det.on ? runs.map(function (id) { return reportRunBlock(f, id, det, 'F' + (i + 1), explained); }).join('') : '') + '</div>';
   });
-  h += '<h3 style="margin-top:16px">3. Results by indicator</h3><table class="rep small"><tr><th>Indicator</th><th class="num">Checks</th><th class="num">PASS</th><th class="num">FAIL</th><th class="num">STATA RULE</th><th class="num">ROUNDING</th><th class="num">N/A CHECK</th><th class="num">Pass rate</th></tr>' +
-    R.perInd.map(function (p) { return '<tr><td><b>' + p.code + '</b> ' + esc(p.name) + '</td><td class="num">' + p.n + '</td><td class="num">' + p.pass + '</td><td class="num">' + (p.fail ? '<b style="color:var(--fail)">' + p.fail + '</b>' : 0) + '</td><td class="num">' + (p.stata ? '<b style="color:var(--amber)">' + p.stata + '</b>' : 0) + '</td><td class="num">' + p.round + '</td><td class="num">' + p.na + '</td><td class="num">' + pct(p.pass, p.n) + '</td></tr>'; }).join('') + '</table>';
-  h += '<h3 style="margin-top:16px">4. Test runs' + (final ? '' : ' in this period') + '</h3>' + (R.runs.length ? '<table class="rep small"><tr><th>Run</th><th>Family ID</th><th>Test instance</th><th>Date</th><th>Tester</th><th>Mode</th><th>Status</th><th class="num">Expected total / LOWB</th><th class="num">App total</th><th class="num">4PsF total</th><th class="num">Pass / issues</th></tr>' +
+  h += '<h2>3. Results by indicator</h2><table><tr><th>Indicator</th><th class="num">Checks</th><th class="num">PASS</th><th class="num">FAIL</th><th class="num">STATA RULE</th><th class="num">ROUNDING</th><th class="num">N/A CHECK</th><th class="num">Pass rate</th></tr>' +
+    R.perInd.map(function (p) { return '<tr><td><b>' + p.code + '</b> ' + esc(p.name) + '</td><td class="num">' + p.n + '</td><td class="num">' + p.pass + '</td><td class="num">' + (p.fail ? '<b style="color:#b42318">' + p.fail + '</b>' : 0) + '</td><td class="num">' + (p.stata ? '<b style="color:#9a6200">' + p.stata + '</b>' : 0) + '</td><td class="num">' + p.round + '</td><td class="num">' + p.na + '</td><td class="num">' + pct(p.pass, p.n) + '</td></tr>'; }).join('') + '</table>';
+  h += '<h2>4. Test runs' + (final ? '' : ' in this period') + '</h2>' + (R.runs.length ? '<table><tr><th>Run</th><th>Family ID</th><th>Test instance</th><th>Date</th><th>Tester</th><th>Mode</th><th>Status</th><th class="num">Expected total / LOWB</th><th class="num">App total</th><th class="num">4PsF total</th><th class="num">Pass / issues</th></tr>' +
     R.runs.map(function (r) { return '<tr><td>' + esc(r['Run ID']) + '</td><td>' + esc(r['Family ID (HHID)']) + '</td><td>' + esc(instanceName(r.Environment) || 'Unspecified') + '</td><td>' + esc(runDate(r)) + '</td><td>' + esc(r.Tester) + '</td><td>' + esc(r.Mode) + '</td><td>' + esc(r.Status) + '</td><td class="num">' + fmt(r['Expected total (target)'], 4) + ' / L' + esc(r['Expected LOWB']) +
       '</td><td class="num">' + fmt(r['SWDI App total'], 4) + '</td><td class="num">' + fmt(r['4Ps Forward total'], 4) + '</td><td class="num">' + esc(r['Checks passed']) + ' / ' + esc(r['Checks not passed']) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">No runs in this period.</p>');
   var byNeed = {}; R.missing.forEach(function (s) { (byNeed[s.needs] = byNeed[s.needs] || []).push(s); });
-  h += '<h3 style="margin-top:16px">5. Coverage still needed (' + R.missing.length + ' scenarios)</h3>' + (R.missing.length ? '<p class="small muted">Use this to choose next week\'s households: the "Needs" column says what kind of member the household must have.</p><table class="rep small"><tr><th>Needs</th><th class="num">Scenarios</th><th>Examples</th></tr>' +
+  h += '<h2>5. Coverage still needed (' + R.missing.length + ' scenarios)</h2>' + (R.missing.length ? '<p class="muted">Use this to choose next week\'s households: the "Needs" column says what kind of member the household must have.</p><table><tr><th>Needs</th><th class="num">Scenarios</th><th>Examples</th></tr>' +
     Object.keys(byNeed).sort(function (a, b) { return byNeed[b].length - byNeed[a].length; }).map(function (k) { return '<tr><td>' + esc(k) + '</td><td class="num">' + byNeed[k].length + '</td><td>' + byNeed[k].slice(0, 3).map(function (s) { return esc(s.desc); }).join('; ') + '</td></tr>'; }).join('') + '</table>' : '<p>All catalogued scenarios have been exercised.</p>');
-  h += '<h3 style="margin-top:16px">6. Rules to confirm with SCMD</h3><table class="rep small"><tr><th>Indicator</th><th>Open question</th><th class="num">Runs that hit it</th></tr>' +
+  h += '<h2>6. Rules to confirm with SCMD</h2><table><tr><th>Indicator</th><th>Open question</th><th class="num">Runs that hit it</th></tr>' +
     R.openRules.map(function (o) { return '<tr><td>' + o.s.ind + '</td><td>' + esc(o.s.desc) + '</td><td class="num">' + o.runs + '</td></tr>'; }).join('') +
     '<tr><td>—</td><td>Indicators with no eligible member (N/A): how the platform scores them</td><td class="num">' + R.naChecks + ' check(s)</td></tr></table>';
   if (final) {
     var openF = R.findings.filter(function (f) { return f.verdict === 'FAIL' || f.verdict === 'STATA RULE' || f.verdict === 'ROUNDING'; }).length;
-    h += '<h3 style="margin-top:16px">7. Completion status</h3><ul class="small"><li>Scenario coverage: <b>' + pct(R.covered, R.total) + '</b> (' + R.covered + ' of ' + R.total + ').</li><li>Open findings: <b>' + openF + '</b> (FAIL, STATA RULE or ROUNDING groups).</li>' +
+    h += '<h2>7. Completion status</h2><ul><li>Scenario coverage: <b>' + pct(R.covered, R.total) + '</b> (' + R.covered + ' of ' + R.total + ').</li><li>Open findings: <b>' + openF + '</b> (FAIL, STATA RULE or ROUNDING groups).</li>' +
       '<li>Runs verified in 4Ps Forward: <b>' + R.verified4pf + '</b> of ' + R.runs.length + '.</li><li>Open rule confirmations: <b>' + R.openRules.length + '</b>.</li></ul>' +
-      '<p class="small muted">Scoring can be signed off when coverage is complete (or the remaining scenarios are explicitly waived), every finding is fixed and re-tested to PASS, and SCMD has confirmed the open rules.</p>' +
-      '<table class="rep small" style="margin-top:12px"><tr><th>Prepared by</th><th>Reviewed by</th><th>Approved by</th></tr><tr><td style="height:48px"></td><td></td><td></td></tr></table>';
+      '<p class="muted">Scoring can be signed off when coverage is complete (or the remaining scenarios are explicitly waived), every finding is fixed and re-tested to PASS, and SCMD has confirmed the open rules.</p>' +
+      '<table style="margin-top:12px"><tr><th>Prepared by</th><th>Reviewed by</th><th>Approved by</th></tr><tr><td style="height:48px"></td><td></td><td></td></tr></table>';
   }
-  return h;
+  return h + '<div class="foot">Generated by the SWDI Scoring Test Runner ' + esc(($('#appRelease') || {}).textContent || '') + ' on ' + esc(localStamp(new Date())) + '. Expected results come from the test runner\'s scoring engine (policy rule and BRVD Stata as written)' + (det.on ? '; the detailed findings re-grade each run from its saved answers' : '') + '.</div></div>';
 }
 
 // ---------- boot ----------
