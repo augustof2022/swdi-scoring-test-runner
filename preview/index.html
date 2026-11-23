@@ -102,7 +102,7 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
 <body>
 <div class="top">
   <h1>SWDI Scoring Test Runner</h1>
-  <span class="chip" id="appRelease" aria-label="App version">v2.2.0 · e8f95765</span>
+  <span class="chip" id="appRelease" aria-label="App version">v2.2.0 · 61421ea9</span>
   <span class="chip" id="modeChip">loading…</span>
   <span class="sp"></span>
   <span class="chip" id="thChip" hidden></span>
@@ -922,9 +922,76 @@ table.rep{margin:6px 0}table.rep td,table.rep th{border:1px solid #e3e8ee}
     return n;
   }
 
+  // ---------- verdicts ----------
+  function isWhole(x, tol) { return Math.abs(x - Math.round(x)) <= tol; }
+
+  /**
+   * Grades one value a platform shows against the policy (target) and BRVD Stata results.
+   * c: { code, obs, exp, stata, tol, avg (true for a family-average indicator),
+   *      others: [{ code, obs, tol }] — the platform's other family-average indicators in the same run }
+   *
+   * ROUNDING is reported only when the criteria are confirmed and only the decimals differ:
+   *   - the policy family average has decimals and the platform shows it rounded (half up) or truncated;
+   *   - the policy rule and the Stata command give the same family average, so the member levels
+   *     behind it are not in dispute (when they differ, a whole number can come from other member levels);
+   *   - the platform shows no decimals on its other family-average indicators in this run
+   *     (a platform that keeps decimals elsewhere is not rounding).
+   * Otherwise a value matching neither rule is FAIL, with `basis` saying why rounding was ruled out.
+   */
+  function judgeScore(c) {
+    var obs = c.obs, exp = c.exp, stata = c.stata, tol = c.tol;
+    var has = function (x) { return x !== null && x !== undefined && x !== '' && !isNaN(x); };
+    if (!has(obs)) return { verdict: '', basis: '' };
+    if (!has(exp)) return { verdict: 'N/A CHECK', basis: 'no_policy_level' };
+    if (Math.abs(obs - exp) <= tol) return { verdict: 'PASS', basis: 'policy' };
+    var rulesAgree = has(stata) && Math.abs(stata - exp) <= 1e-9;
+    if (has(stata) && !rulesAgree && Math.abs(obs - stata) <= tol) return { verdict: 'STATA RULE', basis: 'stata' };
+    if (c.avg && !isWhole(exp, 1e-9)) {
+      var how = Math.abs(obs - Math.round(exp)) <= tol ? 'rounded' : Math.abs(obs - Math.floor(exp)) <= tol ? 'truncated' : '';
+      if (how) {
+        if (!rulesAgree) return { verdict: 'FAIL', basis: 'criteria_disputed', looksLike: how };
+        var decimals = (c.others || []).filter(function (o) { return o.code !== c.code && has(o.obs) && !isWhole(o.obs, o.tol); });
+        if (decimals.length) return { verdict: 'FAIL', basis: 'keeps_decimals', looksLike: how, decimals: decimals };
+        return { verdict: 'ROUNDING', basis: how };
+      }
+    }
+    return { verdict: 'FAIL', basis: 'mismatch' };
+  }
+
+  /**
+   * Looks for member levels that average to the value a platform shows, by grading each member whose
+   * policy and Stata results differ (level or eligibility) by one rule or the other.
+   * Returns { switched: [{ no, name, age, from, to }] } for the mix that changes the fewest members, or null.
+   */
+  function memberMixFor(target, stata, obs, tol) {
+    if (!target || !stata || !target.members || !stata.members) return null;
+    var sm = {}; stata.members.forEach(function (m) { sm[m.no] = m; });
+    var fixed = [], vary = [];
+    target.members.forEach(function (m) {
+      var s = sm[m.no], sl = s ? s.level : null;
+      if (sl === m.level) { if (m.level !== null) fixed.push(m.level); }
+      else vary.push({ no: m.no, name: m.name, age: m.age, p: m.level, s: sl });
+    });
+    if (!vary.length || vary.length > 12) return null;
+    var best = null;
+    for (var mask = 1; mask < (1 << vary.length) - 1; mask++) {
+      var lv = fixed.slice(), sw = [];
+      vary.forEach(function (v, i) {
+        var useStata = (mask >> i) & 1, l = useStata ? v.s : v.p;
+        if (l !== null) lv.push(l);
+        if (useStata) sw.push({ no: v.no, name: v.name, age: v.age, from: v.p, to: v.s });
+      });
+      if (!lv.length) continue;
+      var avg = lv.reduce(function (a, b) { return a + b; }, 0) / lv.length;
+      if (Math.abs(avg - obs) <= tol && (!best || sw.length < best.switched.length)) best = { switched: sw, average: avg };
+    }
+    return best;
+  }
+
   var api = {
     INDICATORS: INDICATORS, ES_W: ES_W, SA_W: SA_W, CUT3: CUT3, CUT2: CUT2, LBL: LBL,
     score: score, scoreBoth: scoreBoth, resolveToken: resolveToken, interpretObserved: interpretObserved,
+    judgeScore: judgeScore, memberMixFor: memberMixFor,
     isSHS: isSHS, arr: arr, num: num, ASSET_VARS: ASSET_VARS, LAND_VARS: LAND_VARS, PARENT_VARS: PARENT_VARS, PROBLEMS: PROBLEMS, DISASTERS: DISASTERS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -2482,26 +2549,26 @@ function tolFor(code) {
   var d = IND.filter(function (x) { return x.code === code; })[0];
   return d ? Math.max(ltol, wtol / d.w) : (code === 'LOWB' ? 0.01 : 0.0015);
 }
-function verdict(code, obs, exp, stata) {
-  if (obs === null) return '';
-  var d = IND.filter(function (x) { return x.code === code; })[0], tol = tolFor(code);
-  if (exp === null || exp === undefined) return 'N/A CHECK';
-  if (Math.abs(obs - exp) <= tol) return 'PASS';
-  if (stata !== null && stata !== undefined && Math.abs(stata - exp) > 1e-9 && Math.abs(obs - stata) <= tol) return 'STATA RULE';
-  if (d && Math.abs(exp - Math.round(exp)) > 1e-9 && [Math.round(exp), Math.floor(exp), Math.ceil(exp)].some(function (x) { return Math.abs(obs - x) <= tol; })) return 'ROUNDING';
-  return 'FAIL';
+function isAvg(code) { var d = IND.filter(function (x) { return x.code === code; })[0]; return !!d && d.agg === 'AVG'; }
+/** The platform's other family-average indicators in this run, as levels (evidence of whether it keeps decimals). */
+function avgObserved(p, except) {
+  var O = S.run.obs;
+  return IND.filter(function (d) { return d.agg === 'AVG' && d.code !== except; }).map(function (d) {
+    var raw = num(O[p][d.code]);
+    return { code: d.code, obs: raw === null ? null : O.mode[p] === 'weighted' ? SWDI.interpretObserved(d.code, raw, 'weighted') : raw, tol: tolFor(d.code) };
+  }).filter(function (o) { return o.obs !== null; });
 }
 function totalsOf(r) { return { ES: r.es_raw, SA: r.sa_raw, TOTAL: r.total, LOWB: r.lowb, ES_R: r.es_rescaled, SA_R: r.sa_rescaled }; }
 function isNA(v) { return /^\s*(n\/?a|not computed|none)\s*$/i.test(String(v === undefined || v === null ? '' : v)); }
-function judgeOne(p, code, both) {
-  var R = S.run, O = R.obs, t = both.target, s = both.stata, tt = totalsOf(t), st = totalsOf(s), raw = num(O[p][code]);
-  if (isNA(O[p][code]) && t.indicators[code]) return t.indicators[code].level === null ? 'PASS' : 'FAIL';
-  if (raw === null) return '';
-  if (code === 'ES' || code === 'SA') { var useR = Math.abs(raw - tt[code + '_R']) < Math.abs(raw - tt[code]); return verdict(code, raw, useR ? tt[code + '_R'] : tt[code], useR ? st[code + '_R'] : st[code]); }
-  if (code === 'TOTAL' || code === 'LOWB') return verdict(code, raw, tt[code], st[code]);
-  var obs = O.mode[p] === 'weighted' ? SWDI.interpretObserved(code, raw, 'weighted') : raw;
-  return verdict(code, obs, t.indicators[code].level, s.indicators[code].level);
+/** Full grading of one platform value: { verdict, basis, ... } (see SWDI.judgeScore). */
+function judgeDetail(p, code, both) {
+  var R = S.run, O = R.obs, t = both.target, raw = num(O[p][code]);
+  if (isNA(O[p][code]) && t.indicators[code]) return t.indicators[code].level === null ? { verdict: 'PASS', basis: 'policy' } : { verdict: 'FAIL', basis: 'not_computed' };
+  if (raw === null) return { verdict: '', basis: '' };
+  var v = compareValues(p, code, both);
+  return SWDI.judgeScore({ code: code, obs: v.obs, exp: v.exp, stata: v.stata, tol: tolFor(code), avg: isAvg(code), others: isAvg(code) ? avgObserved(p, code) : [] });
 }
+function judgeOne(p, code, both) { return judgeDetail(p, code, both).verdict; }
 var PLATFORMS = { swdi: 'SWDI App', fpf: '4Ps Forward' };
 var EXPLAINED = ['FAIL', 'STATA RULE', 'ROUNDING', 'N/A CHECK'];
 // A collapsible block in the app; expanded (always readable) in the printed / PDF test record.
@@ -2544,17 +2611,39 @@ function compareValues(p, code, both) {
   return { na: isNA(raw), raw: raw, obs: r, exp: tt[key], stata: st[key], rescaled: key !== code, f: function (x) { return totTxt(code, x); } };
 }
 /** One-paragraph reason for a non-PASS verdict on one platform. */
+function mixSentence(p, code, both, v) {
+  if (!isAvg(code) || v.obs === null) return '';
+  var lv = function (l) { return l === null || l === undefined ? 'excluded' : 'L' + l; };
+  var mix = SWDI.memberMixFor(both.target.indicators[code], both.stata.indicators[code], v.obs, tolFor(code));
+  var t = both.target.indicators[code], st = both.stata.indicators[code], differ = (t.members || []).some(function (m) {
+    var o = (st.members || []).filter(function (x) { return x.no === m.no; })[0];
+    return !o || o.level !== m.level;
+  });
+  if (mix) return ' <b>' + v.f(v.obs) + '</b> is reproduced when ' + mix.switched.map(function (m) {
+    return 'M' + m.no + ' ' + esc(m.name) + ' (' + m.age + ') is graded as in the BRVD Stata command (' + lv(m.to) + ' instead of ' + lv(m.from) + ')';
+  }).join(' and ') + ', and every other member as in the policy rule.';
+  if (differ) return ' No mix of the policy and Stata member results averages to <b>' + v.f(v.obs) + '</b>, so ' + PLATFORMS[p] + ' also counts different members (age coverage, member status) or grades them by another condition.';
+  return '';
+}
 function verdictLead(p, code, both, result) {
   var v = compareValues(p, code, both), plat = PLATFORMS[p], f = v.f, none = function (x) { return x === null || x === undefined || x === ''; };
   var obsTxt = v.na ? 'no score (N/A)' : f(v.obs) + (v.weighted ? ' (typed as weighted score ' + esc(v.raw) + ')' : '') + (v.rescaled ? ' (re-scaled)' : '');
   var expTxt = none(v.exp) ? 'no level' : f(v.exp), stTxt = none(v.stata) ? 'no level' : f(v.stata);
+  var j = judgeDetail(p, code, both), whole = j.looksLike === 'truncated' ? 'the whole number left when the decimals of ' : 'the whole number nearest to ';
   if (result === 'FAIL') {
     if (v.na) return plat + ' shows no score (N/A), but the policy rule expects ' + expTxt + ' (BRVD Stata: ' + stTxt + '). The platform did not compute an indicator that has a level.';
-    return plat + ' shows <b>' + obsTxt + '</b>. The policy rule expects <b>' + expTxt + '</b> and the BRVD Stata command gives <b>' + stTxt + '</b>, so neither rule explains the platform score.' +
-      (none(v.exp) || v.obs === null ? '' : ' Difference from the policy result: ' + dec4(v.obs - v.exp) + ' (allowed tolerance ±' + dec4(tolFor(code)) + ').');
+    var head = plat + ' shows <b>' + obsTxt + '</b>. The policy rule expects <b>' + expTxt + '</b> and the BRVD Stata command gives <b>' + stTxt + '</b>, so neither rule explains the platform score.';
+    if (j.basis === 'criteria_disputed') return head + ' <b>Not a rounding issue:</b> ' + f(v.obs) + ' is ' + whole + expTxt + (j.looksLike === 'truncated' ? ' are dropped' : '') +
+      ', but the policy rule and the Stata command give different family results for this indicator, so the conditions the platform applied are not confirmed. A whole number here comes from different member levels — members counted or graded by other conditions — not only from rounding.' +
+      mixSentence(p, code, both, v) + ' Compare the members ' + plat + ' counted, and their levels, with the breakdowns below.';
+    if (j.basis === 'keeps_decimals') return head + ' <b>Not a rounding issue:</b> the policy rule and the Stata command agree on ' + expTxt + ', but ' + plat + ' keeps the decimals of other family averages in this run (' +
+      j.decimals.map(function (o) { return o.code + ' ' + dec4(o.obs); }).join(', ') + '), so it does not round family averages. The whole number here comes from different member levels — members counted or graded by other conditions. Compare the members ' + plat + ' counted, and their levels, with the breakdown below.';
+    return head + mixSentence(p, code, both, v) + (none(v.exp) || v.obs === null ? '' : ' Difference from the policy result: ' + dec4(v.obs - v.exp) + ' (allowed tolerance ±' + dec4(tolFor(code)) + ').');
   }
   if (result === 'STATA RULE') return plat + ' shows <b>' + obsTxt + '</b>, which matches the BRVD Stata command as written (<b>' + stTxt + '</b>) and not the policy rule (<b>' + expTxt + '</b>). The DSWD-requested rule change is not implemented.';
-  if (result === 'ROUNDING') return plat + ' shows <b>' + obsTxt + '</b> while the policy family average is <b>' + expTxt + '</b>. The platform appears to round the family average to a whole level instead of keeping the decimals.';
+  if (result === 'ROUNDING') return plat + ' shows <b>' + obsTxt + '</b>. The policy rule and the BRVD Stata command both give the family average <b>' + expTxt + '</b>, so the criteria and conditions were followed and only the decimals differ: ' +
+    plat + (j.basis === 'truncated' ? ' drops the decimals (truncates) ' : ' rounds the family average to the nearest whole level ') + 'instead of keeping ' + expTxt + '.' +
+    (function (o) { return o.length ? ' Its other family averages in this run are whole numbers too (' + o.map(function (x) { return x.code + ' ' + dec4(x.obs); }).join(', ') + ').' : ''; })(avgObserved(p, code));
   if (result === 'N/A CHECK') return 'The policy rule gives no level here (no eligible member, or an open rule to confirm with SCMD); ' + plat + ' shows <b>' + obsTxt + '</b>. Confirm the expected handling with SCMD.';
   return '';
 }
@@ -2594,7 +2683,7 @@ function tabVerify() {
         return '<tr style="background:#f7f9fc"><td><b>' + d.name + '</b></td><td class="num">' + totTxt(d.code, tt[d.code]) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + '</table></div>';
   }
-  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison; <b>ROUNDING</b> = it rounded a family average. Every verdict other than PASS has a <b>Why?</b> row below it with the member responses, criteria and calculations.</div>' +
+  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled). Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison; <b>ROUNDING</b> = the policy and Stata rules agree on a family average with decimals and the platform shows it as a whole number (criteria followed, decimals dropped); when the rules disagree on the members, or the platform keeps decimals elsewhere, a whole number is graded <b>FAIL</b>. Every verdict other than PASS has a <b>Why?</b> row below it with the member responses, criteria and calculations.</div>' +
     testDetailsCard(R) +
     '<div class="row noprint" style="margin-bottom:10px"><button class="btn sm" id="goImport">Import 4Ps Forward scores from the capture extension…</button>' + (R.fpfUrl ? '<a class="small" target="_blank" rel="noopener" href="' + esc(R.fpfUrl) + '">Open in 4Ps Forward ↗</a>' : '') + '</div>' +
     '<div class="grid2">' + col('swdi', 'SWDI App') + col('fpf', '4Ps Forward') + '</div>' +
@@ -3146,7 +3235,7 @@ function reportHTML(R) {
   sev.forEach(function (f, i) {
     var runs = f.items.map(function (x) { return x.run; }).filter(function (x, j, a) { return a.indexOf(x) === j; });
     var meaning = f.verdict === 'FAIL' ? 'Platform score matches neither the DSWD target rule nor the Stata command as written.' : f.verdict === 'STATA RULE' ? 'The observed score matches the BRVD Stata comparison.' + (STATA_NOTES[f.code] ? ' ' + STATA_NOTES[f.code] : '') :
-      f.verdict === 'ROUNDING' ? 'Platform rounds the family average to a whole level instead of using the unrounded average.' : 'SWDI App and 4Ps Forward show different values for the same assessment.';
+      f.verdict === 'ROUNDING' ? 'The policy and Stata rules agree on the family average (criteria followed); the platform rounds or truncates it to a whole level instead of keeping the decimals.' : 'SWDI App and 4Ps Forward show different values for the same assessment.';
     h += '<div class="finding"><b>F' + (i + 1) + '. ' + f.code + ' — ' + esc(f.name) + '</b> <span class="pill ' + vcls(f.verdict) + '">' + esc(f.verdict) + '</span> <span class="small muted">' + runs.length + ' run(s) · ' + Object.keys(f.platforms).join(', ') + '</span>' +
       '<div class="small" style="margin:4px 0">' + esc(meaning) + '</div><table class="rep small"><tr><th>Run</th><th>Platform</th><th class="num">Expected</th><th class="num">Stata</th><th class="num">Observed</th><th>How the expected level was graded</th></tr>' +
       f.items.slice(0, 8).map(function (x) { return '<tr><td>' + esc(x.run) + '</td><td>' + esc(x.platform) + '</td><td class="num">' + lvlTxt(x.expected) + '</td><td class="num">' + (x.stata === undefined || x.stata === '' ? '—' : lvlTxt(x.stata)) + '</td><td class="num">' + esc(x.observed) + '</td><td>' + (f.verdict === 'STATA RULE' ? esc(x.why || '') + '<div>' + esc(x.stataWhy || '') + '</div><div style="white-space:pre-line">' + esc(x.memberEvidence || '') + '</div>' : esc(String(x.why || '').slice(0, 220))) + '</td></tr>'; }).join('') +

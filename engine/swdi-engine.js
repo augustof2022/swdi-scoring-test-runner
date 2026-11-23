@@ -791,9 +791,76 @@
     return n;
   }
 
+  // ---------- verdicts ----------
+  function isWhole(x, tol) { return Math.abs(x - Math.round(x)) <= tol; }
+
+  /**
+   * Grades one value a platform shows against the policy (target) and BRVD Stata results.
+   * c: { code, obs, exp, stata, tol, avg (true for a family-average indicator),
+   *      others: [{ code, obs, tol }] — the platform's other family-average indicators in the same run }
+   *
+   * ROUNDING is reported only when the criteria are confirmed and only the decimals differ:
+   *   - the policy family average has decimals and the platform shows it rounded (half up) or truncated;
+   *   - the policy rule and the Stata command give the same family average, so the member levels
+   *     behind it are not in dispute (when they differ, a whole number can come from other member levels);
+   *   - the platform shows no decimals on its other family-average indicators in this run
+   *     (a platform that keeps decimals elsewhere is not rounding).
+   * Otherwise a value matching neither rule is FAIL, with `basis` saying why rounding was ruled out.
+   */
+  function judgeScore(c) {
+    var obs = c.obs, exp = c.exp, stata = c.stata, tol = c.tol;
+    var has = function (x) { return x !== null && x !== undefined && x !== '' && !isNaN(x); };
+    if (!has(obs)) return { verdict: '', basis: '' };
+    if (!has(exp)) return { verdict: 'N/A CHECK', basis: 'no_policy_level' };
+    if (Math.abs(obs - exp) <= tol) return { verdict: 'PASS', basis: 'policy' };
+    var rulesAgree = has(stata) && Math.abs(stata - exp) <= 1e-9;
+    if (has(stata) && !rulesAgree && Math.abs(obs - stata) <= tol) return { verdict: 'STATA RULE', basis: 'stata' };
+    if (c.avg && !isWhole(exp, 1e-9)) {
+      var how = Math.abs(obs - Math.round(exp)) <= tol ? 'rounded' : Math.abs(obs - Math.floor(exp)) <= tol ? 'truncated' : '';
+      if (how) {
+        if (!rulesAgree) return { verdict: 'FAIL', basis: 'criteria_disputed', looksLike: how };
+        var decimals = (c.others || []).filter(function (o) { return o.code !== c.code && has(o.obs) && !isWhole(o.obs, o.tol); });
+        if (decimals.length) return { verdict: 'FAIL', basis: 'keeps_decimals', looksLike: how, decimals: decimals };
+        return { verdict: 'ROUNDING', basis: how };
+      }
+    }
+    return { verdict: 'FAIL', basis: 'mismatch' };
+  }
+
+  /**
+   * Looks for member levels that average to the value a platform shows, by grading each member whose
+   * policy and Stata results differ (level or eligibility) by one rule or the other.
+   * Returns { switched: [{ no, name, age, from, to }] } for the mix that changes the fewest members, or null.
+   */
+  function memberMixFor(target, stata, obs, tol) {
+    if (!target || !stata || !target.members || !stata.members) return null;
+    var sm = {}; stata.members.forEach(function (m) { sm[m.no] = m; });
+    var fixed = [], vary = [];
+    target.members.forEach(function (m) {
+      var s = sm[m.no], sl = s ? s.level : null;
+      if (sl === m.level) { if (m.level !== null) fixed.push(m.level); }
+      else vary.push({ no: m.no, name: m.name, age: m.age, p: m.level, s: sl });
+    });
+    if (!vary.length || vary.length > 12) return null;
+    var best = null;
+    for (var mask = 1; mask < (1 << vary.length) - 1; mask++) {
+      var lv = fixed.slice(), sw = [];
+      vary.forEach(function (v, i) {
+        var useStata = (mask >> i) & 1, l = useStata ? v.s : v.p;
+        if (l !== null) lv.push(l);
+        if (useStata) sw.push({ no: v.no, name: v.name, age: v.age, from: v.p, to: v.s });
+      });
+      if (!lv.length) continue;
+      var avg = lv.reduce(function (a, b) { return a + b; }, 0) / lv.length;
+      if (Math.abs(avg - obs) <= tol && (!best || sw.length < best.switched.length)) best = { switched: sw, average: avg };
+    }
+    return best;
+  }
+
   var api = {
     INDICATORS: INDICATORS, ES_W: ES_W, SA_W: SA_W, CUT3: CUT3, CUT2: CUT2, LBL: LBL,
     score: score, scoreBoth: scoreBoth, resolveToken: resolveToken, interpretObserved: interpretObserved,
+    judgeScore: judgeScore, memberMixFor: memberMixFor,
     isSHS: isSHS, arr: arr, num: num, ASSET_VARS: ASSET_VARS, LAND_VARS: LAND_VARS, PARENT_VARS: PARENT_VARS, PROBLEMS: PROBLEMS, DISASTERS: DISASTERS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
