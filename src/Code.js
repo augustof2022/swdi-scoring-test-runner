@@ -3,12 +3,14 @@
  * Data lives in the Google Sheet below; testers only use the web app.
  */
 var SHEET_ID = '__SHEET_ID__';   // replaced at build time from config.json
+var DRIVE_FOLDER_ID = '__DRIVE_FOLDER_ID__';   // test-record PDFs; the Config tab's drive_folder_id overrides it
 
 var SCHEMA = {
   Runs: ['Run ID', 'Family ID (HHID)', 'Mode', 'Tester', 'Interview date', 'Food threshold', 'Poverty threshold', 'Status', 'Members', 'Expected total (target)', 'Expected LOWB',
     'Stata total', 'Stata LOWB', 'Rule conflicts', 'N/A indicators', 'SWDI App total', '4Ps Forward total', 'Checks passed', 'Checks not passed',
     'Scenarios exercised', 'Notes', 'Created at', 'Updated at',
-    'Household head', 'Created by', 'Last saved by', 'Environment', '4Ps Forward link', 'Progress', 'Revision'],
+    'Household head', 'Created by', 'Last saved by', 'Environment', '4Ps Forward link', 'Progress', 'Revision',
+    'SWDI App version', 'SWDI App used (date & time)', '4Ps Forward used (date & time)', '4Ps Forward assessment', 'Exported record link'],
   Roster: ['Key', 'Run ID', 'Member #', 'Name', 'Age', 'Sex', 'Relationship', 'Member status'],
   Entries: ['Key', 'Run ID', 'Member #', 'Member', 'Section', 'Variable', 'Question', 'Value', 'Meaning', 'Suggested value', 'Target scenarios', 'Changed from suggestion'],
   Scores: ['Key', 'Run ID', 'Code', 'Indicator', 'Weight', 'Expected level (target)', 'Expected weighted', 'Stata level', 'Rule conflict',
@@ -158,6 +160,47 @@ function deleteRun(runId, tester) {
     log_(user_() || tester, runId, 'Deleted run', '');
     return true;
   });
+}
+
+/** Google Drive folder ID for exported test records: Config tab drive_folder_id (ID or link), else config.json driveFolderId. */
+function driveFolderId_() {
+  var v = String(config_().config.drive_folder_id || '').trim() || (DRIVE_FOLDER_ID.indexOf('__') === 0 ? '' : DRIVE_FOLDER_ID);
+  var m = v.match(/folders\/([-\w]{10,})/) || v.match(/[?&]id=([-\w]{10,})/) || v.match(/^([-\w]{10,})$/);
+  return m ? m[1] : '';
+}
+function safeFileName_(name) {
+  return String(name || 'SWDI test record').replace(/[\\\/:*?"<>|#%\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150) || 'SWDI test record';
+}
+
+/**
+ * Converts the test-record HTML built by the web app to a PDF.
+ * target 'download' → {name, base64}; target 'drive' → saves it in the Drive folder → {name, url, id, folderUrl}
+ * and records the link in the run's 'Exported record link' column.
+ */
+function exportRecordPdf(html, fileName, runId, target, tester) {
+  var who = user_() || String(tester || '').trim() || 'unknown', name = safeFileName_(fileName);
+  var pdf = Utilities.newBlob(String(html || ''), 'text/html', name + '.html').getAs('application/pdf').setName(name + '.pdf');
+  if (target !== 'drive') {
+    log_(who, runId, 'Downloaded record PDF', name + '.pdf');
+    return JSON.stringify({ name: name + '.pdf', base64: Utilities.base64Encode(pdf.getBytes()) });
+  }
+  var id = driveFolderId_();
+  if (!id) throw new Error('No Google Drive folder is set for test records. Add drive_folder_id to the Config tab of the sheet.');
+  var folder;
+  try { folder = DriveApp.getFolderById(id); folder.getName(); }
+  catch (e) {
+    var owner = ''; try { owner = Session.getEffectiveUser().getEmail(); } catch (x) {}
+    throw new Error('The web app cannot open the Google Drive folder ' + id + '. Share the folder as Editor with the account that deployed the web app' + (owner ? ' (' + owner + ')' : '') + ', then try again.');
+  }
+  var file = folder.createFile(pdf), url = file.getUrl();
+  if (runId) withLock_(function () {
+    var sh = sheet_('Runs'), hdr = SCHEMA.Runs, last = sh.getLastRow();
+    if (last < 2) return;
+    var i = sh.getRange(2, 1, last - 1, 1).getValues().map(function (r) { return r[0]; }).indexOf(runId);
+    if (i >= 0) sh.getRange(i + 2, hdr.indexOf('Exported record link') + 1).setValues([[url]]);
+  });
+  log_(who, runId, 'Uploaded record PDF to Drive', name + '.pdf ' + url);
+  return JSON.stringify({ name: name + '.pdf', url: url, id: file.getId(), folderUrl: folder.getUrl() });
 }
 
 function log_(tester, runId, action, details) {

@@ -117,3 +117,35 @@ test('planning reads existing scores and actual scoring inputs without changing 
   assert.equal(r.household.members[1].status,3);
   assert.equal(r.scores[0].verdicts['Recorded platform'],'PASS');
 });
+
+test('exportRecordPdf downloads a PDF or saves it in the Drive folder and records the link on the run', () => {
+  const { ctx, ss } = load();
+  ctx.getBootstrap();
+  const made = [];
+  const blob = name => ({ name, getAs: () => blob('pdf'), setName(n) { this.name = n; return this; }, getBytes: () => [37, 80, 68, 70] });
+  ctx.Utilities.newBlob = (html, type, name) => { assert.match(html, /SWDI Scoring Test Record/); return blob(name); };
+  ctx.Utilities.base64Encode = bytes => 'b64:' + bytes.length;
+  const id = JSON.parse(ctx.saveRun(JSON.stringify(payload('', 'FAM-7', 1)), 't')).id;
+  const html = '<h1>SWDI Scoring Test Record</h1>';
+  const dl = JSON.parse(ctx.exportRecordPdf(html, 'SWDI test record ' + id + ' - HH FAM-7 - 2026-11-23 14:05', id, 'download', 't'));
+  assert.equal(dl.name, 'SWDI test record ' + id + ' - HH FAM-7 - 2026-11-23 14 05.pdf');   // ':' is not allowed in file names
+  assert.equal(dl.base64, 'b64:4');
+  // No folder configured (placeholder not replaced in this test) → clear message.
+  assert.throws(() => ctx.exportRecordPdf(html, 'x', id, 'drive', 't'), /drive_folder_id/);
+  // The Config tab may hold the folder link; the ID is taken from it.
+  const cfg = ss._sheets.Config; cfg.appendRow(['drive_folder_id', 'https://drive.google.com/drive/folders/14egoC7xgpQc5jG9ZBPXlEgonVbxSUIaf?usp=drive_link']);
+  ctx.DriveApp = { getFolderById: fid => {
+    assert.equal(fid, '14egoC7xgpQc5jG9ZBPXlEgonVbxSUIaf');
+    return { getName: () => 'Records', getUrl: () => 'https://drive.google.com/drive/folders/' + fid,
+      createFile: b => { made.push(b.name); return { getUrl: () => 'https://drive.google.com/file/d/F1/view', getId: () => 'F1' }; } };
+  } };
+  const up = JSON.parse(ctx.exportRecordPdf(html, 'SWDI test record ' + id, id, 'drive', 't'));
+  assert.equal(up.url, 'https://drive.google.com/file/d/F1/view');
+  assert.deepEqual(made, ['SWDI test record ' + id + '.pdf']);
+  const run = JSON.parse(ctx.getBootstrap()).runs.find(r => r['Run ID'] === id);
+  assert.equal(run['Exported record link'], up.url);
+  // A folder the deploying account cannot open → tells the tester what to share.
+  ctx.DriveApp = { getFolderById: () => { throw new Error('No item with the given ID'); } };
+  ctx.Session.getEffectiveUser = () => ({ getEmail: () => 'owner@dswd.gov.ph' });
+  assert.throws(() => ctx.exportRecordPdf(html, 'x', id, 'drive', 't'), /Share the folder as Editor .*owner@dswd\.gov\.ph/);
+});
