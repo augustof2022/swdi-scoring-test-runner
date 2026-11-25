@@ -39,7 +39,7 @@ const D = {
   'L.L3.able_all_10to64': 'Age 10-64 able to read, write, count, understand → L3', 'L.chk.basic_literacy_understand_no': 'Age 10-64 reads/writes/counts but cannot understand → L2 (SCMD, 25 Nov 2026)',
   'L.excl.under5': 'Under 5 excluded', 'L.excl.65plus': '65+ excluded',
   'M.L1.no_internet': 'No internet use → L1', 'M.L2.info_data_literacy_only': 'Internet + information/data literacy only → L2', 'M.L3.higher_activity': 'Internet + communication/content/safety/problem-solving → L3',
-  'M.chk.internet_but_no_activity': 'Used internet but None in all five activity groups — no rule assigns a level; confirm', 'M.excl.under10': 'Under 10 excluded', 'M.excl.65plus': '65+ excluded',
+  'M.chk.internet_but_no_activity': 'Used internet, None in all five activity groups → L1 (SCMD, 25 Nov 2026). Stata gives no level', 'M.excl.under10': 'Under 10 excluded', 'M.excl.65plus': '65+ excluded',
   'N.L1.not_enrolled': 'Not enrolled → L1', 'N.L1.attendance_below_70': 'Enrolled, attendance < 70% → L1', 'N.L2.attendance_70_to_84': 'Attendance 70-84% → L2', 'N.L3.attendance_85_plus': 'Attendance ≥ 85% → L3',
   'N.excl.under3': 'Under 3 excluded', 'N.excl.19plus': '19+ excluded',
   'I.L1.unimproved_source': 'Unprotected well/spring or surface water → L1', 'I.L2.improved_over_30min': 'Improved source, > 30 minutes → L2', 'I.L3.improved_30min_or_less': 'Improved source, ≤ 30 minutes → L3',
@@ -92,7 +92,7 @@ function describe(b) {
   return b;
 }
 // Confirmed by SCMD on 25 Nov 2026: no longer an open question or a target/Stata conflict.
-const CONFIRMED = ['F.div.not_sick_but_did_not_avail', 'L.chk.basic_literacy_understand_no', 'S.chk.quantity_vs_item_types', 'Y.chk.not_recovered_with_one_to_two_items'];
+const CONFIRMED = ['M.chk.internet_but_no_activity', 'F.div.not_sick_but_did_not_avail', 'L.chk.basic_literacy_understand_no', 'S.chk.quantity_vs_item_types', 'Y.chk.not_recovered_with_one_to_two_items'];
 function kindOf(b) {
   if (CONFIRMED.indexOf(b) >= 0) return 'Special case';
   if (/\.div\./.test(b)) return 'Rule conflict (target vs Stata)';

@@ -96,7 +96,7 @@ for r in ws.iter_rows(min_row=2): r[3].alignment = WRAP
 NOTES = {'A': 'BRVD Scoring Rules rows 8 and 10: the diploma test uses the recorded gradel code, and the family average includes members aged 18 or older.', 'C': 'Stata: family size = all captured members − OFW; under-15 income counted; no imputed rent.',
          'E': 'Stata counts insurance and accounts separately.', 'G': 'Stata: not sick → 3 even if confined/chronic.',
          'H': 'Stata ignores overweightind; moderate overwrites severe.', 'I': 'Stata keeps 11/12 in the > 30 min rule; blank minutes count as > 30.',
-         'J': 'Stata precedence: any toilet with shared = No passes the Level 2 line.', 'L': 'Stata overwrite turns all-No into 2.', 'O': 'Stata overwrite ignores hazard-prone.',
+         'J': 'Stata precedence: any toilet with shared = No passes the Level 2 line.', 'M': 'Stata gives no level to internet = Yes with None in all groups.', 'L': 'Stata overwrite turns all-No into 2.', 'O': 'Stata overwrite ignores hazard-prone.',
          'P': 'Stata overwrite ignores hazard-prone.', 'U': 'Stata: any resolved problem overwrites to 3.',
          'W': 'Stata: any vaccine, enrolment only, needs all 4 for 3.', 'Y': 'Stata: any kit item, no savings, no volcanic eruption; 3 items without savings → missing.'}
 rows = [[d['code'], d['name'], d['dim'], d['w'], d['cov'], d['agg'], d['criteria']['1'], d['criteria']['2'], d['criteria']['3'], NOTES.get(d['code'], 'Same as target.')] for d in IND]

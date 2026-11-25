@@ -1,6 +1,6 @@
 {
   "name": "swdi-scoring-test-runner",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "private": true,
   "description": "Test runner for Enhanced SWDI scoring in the SWDI App and 4Ps Forward: scoring engine (target + Stata rule sets), guided test planner, Apps Script web app over a Google Sheet.",
   "scripts": {
