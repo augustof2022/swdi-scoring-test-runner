@@ -123,7 +123,7 @@
     if (a >= 10 && a <= 64) {
       add('L', { literacy_read: 2, literacy_write: 2, literacy_count: 2, literacy_understand: 2 }); add('L', { literacy_read: 2 }); add('L', { literacy_understand: 2 });
       add('M', { internet: 2, digiact: '' }); add('M', { internet: 1, digiact: '1' }); add('M', { internet: 1, digiact: '1;4' }); add('M', { internet: 1, digiact: '3' });
-      add('M', { internet: 1, digiact: '5' }); add('M', { internet: 1, digiact: '2' }); add('M', { internet: 1, digiact: '' });
+      add('M', { internet: 1, digiact: '5' }); add('M', { internet: 1, digiact: '2' }); add('M', { internet: 1, digiact: '0' });
     }
     if (a >= 3 && a <= 18) { add('N', { educind: 2, gradel: '', schattendance: '' }); add('N', { schattendance: 1 }); add('N', { schattendance: 2 }); }
     if (a <= 17) {
@@ -323,14 +323,14 @@
   function plan(roster, uncovered, thresholds, history) {
     const want = new Set(uncovered || []);
     let P = {hh: hhDefaults(), members: roster.map(m => Object.assign({no:m.no, name:m.name, age:Number(m.age), status:m.status || 1}, memberDefaults(m)))};
-    let finalForm = false;
+    let finalForm = false, scoreLowb = false;
     // Compare the gains AND losses across every indicator which reads any changed input.
     function choose(options, force, avoidFullRepeat) {
       if (!options.length) return;
       const fields = {hh:new Set(), m:new Set()};
       options.forEach(patches => patches.forEach(([key,p]) => Object.keys(p).forEach(k => fields[key === 'hh' ? 'hh':'m'].add(k))));
       if (!finalForm && (fields.m.has('workind') || fields.m.has('jobind'))) fields.m.add('wagcshm');
-      const affected = C.codes.filter(c => (C.hh[c] || []).some(k => fields.hh.has(k)) || (C.member[c] || []).some(k => fields.m.has(k))).concat('LOWB');
+      const affected = C.codes.filter(c => (C.hh[c] || []).some(k => fields.hh.has(k)) || (C.member[c] || []).some(k => fields.m.has(k))).concat(scoreLowb ? 'LOWB' : []);
       if (history) for (const code of ['ES','SA','TOTAL']) if (history.stats[code].issues.length) affected.push(code);
       function evaluate(q) {
         const actual = finalForm ? q : entries(q), both = E.scoreBoth(actual, {thresholds});
@@ -346,12 +346,17 @@
     }
     HH_SLOTS.forEach(slot => {
       let options = slot.cands();
-      if (slot.ind === 'Y') options = options.flatMap(p => [p, Object.assign({location:2},p)]);
+      if (slot.ind === 'Y') {
+        // Outside a hazard area, roof and wall keep their level only with the next weaker material.
+        options = options.flatMap(p => [p, Object.assign({location:2},p), Object.assign({location:2, roof:7, wall:8},p), Object.assign({location:2, roof:4, wall:5},p)]);
+      }
       choose(options.map(p => [['hh',p]]));
     });
     const adults = P.members.filter(m => isActive(m) && m.age >= 15).map(m => m.no);
     for (const code of ['E','V']) choose(familyCands(adults).filter(c => c.ind === code).map(c => c.patches));
     for (const code of ['W','A','B','D','F','G','H','L','M','N']) memberSearch(code, P, choose, thresholds);
+    // The overall level is compared from the income step on: before it, the total still lacks the heaviest indicator.
+    scoreLowb = true;
     const income = incomeOptions(P, thresholds);
     choose(income, true);
     P = entries(P);
@@ -421,7 +426,7 @@
     return {household:P, targets, rows, repeatedRun: history && history.fullCases.get(C.signature('TOTAL',P,thresholds))};
   }
 
-  // The scenario catalog uses legacy job flags. Translate the finished plan to BRVD v0.4 entries.
+  // The scenario catalog uses legacy job flags. Translate the finished plan to BRVD entries.
   function setEmploymentAnswers(m, memberAge) {
     if (memberAge < 5) return;
     // Ages 5-14 answer only the child labor activity path, not adult PSOC employment questions.

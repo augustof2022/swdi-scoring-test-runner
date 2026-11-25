@@ -2,8 +2,8 @@
  *
  * Two rule sets are computed side by side:
  *   'target' — DSWD-intended rule: Criteria for the Levels of Well-Being + DSWD comments in
- *              BRVD Annex A v0.4 "Scoring Rules".
- *   'stata'  — the BRVD Stata command exactly as written, including Stata's sequential
+ *              BRVD Annex A v0.4 "Scoring Rules" + SCMD confirmations (README, "Rules confirmed by SCMD").
+ *   'stata'  — the BRVD Stata command (v0.4; v0.6 has the same formulas) as written, including Stata's sequential
  *              `replace` overwrite order and missing-value behaviour (missing > any number).
  * Every member-level and family-level result carries a plain-language `why` (the criterion that
  * was applied, or the reason a member was excluded) so testers can check the grading.
@@ -24,7 +24,7 @@
     { code: 'E', key: 'fininst', name: "Family's Access to Financial Institutions", dim: 'ES', w: 0.0139, scope: 'family', agg: 'COUNT', cov: '15+',
       criteria: { 1: 'Nobody has insurance, a financial account or savings', 2: 'One member has access/account (insurance or financial institution), no savings', 3: 'At least two members have access/account, OR at least one member has savings' } },
     { code: 'F', key: 'healthsvc', name: 'Availment of accessible health services (past 6 months)', dim: 'SA', w: 0.1018, scope: 'member', agg: 'AVG', cov: 'all members',
-      criteria: { 1: 'Got sick but did not want to avail, or went to non-professional providers (albularyo, hilot)', 2: 'Wanted to avail but did not: poor health services, poor client services, or no accessible services', 3: 'Availed health services (treatment/prevention), or did not need to avail (not sick)' } },
+      criteria: { 1: 'Did not want to avail, whether sick or not, or went to non-professional providers (albularyo, hilot)', 2: 'Wanted to avail but did not: poor health services, poor client services, or no accessible services', 3: 'Availed health services (treatment/prevention), or did not need to avail (not sick)' } },
     { code: 'G', key: 'healthcond', name: 'Health Condition (past 6 months)', dim: 'SA', w: 0.0509, scope: 'member', agg: 'MIN', cov: 'all members',
       criteria: { 1: 'Injured/sick needing hospital confinement, or bedridden / chronic illness needing maintenance', 2: 'Injured/sick needing medical attention but not confinement', 3: 'Not injured or sick needing medical attention or confinement' } },
     { code: 'H', key: 'nutrition', name: 'Nutritional status of children aged 0-18', dim: 'SA', w: 0.0509, scope: 'member', agg: 'AVG', cov: '0-18',
@@ -62,7 +62,7 @@
     { code: 'X', key: 'gbv', name: 'Protection from gender-based violence', dim: 'SA', w: 0.0093, scope: 'family', agg: 'HH', cov: 'household',
       criteria: { 1: 'A member experienced GBV and no action has been taken', 2: 'Reported to support authorities (parent leader, C/ML, social worker)', 3: 'No member experienced GBV, or reported to formal authorities (barangay, police, court)' } },
     { code: 'Y', key: 'drrm', name: 'Practice of Disaster Risk Reduction and Management', dim: 'SA', w: 0.0093, scope: 'family', agg: 'HH', cov: 'household',
-      criteria: { 1: 'Hazard-prone area or GIDA; or none of kit/knowledge/plan/savings; or affected and not recovered', 2: '1-2 of the items; or 3+ items and partially recovered', 3: '3+ of kit/knowledge/plan/savings, and fully recovered or not affected' } }
+      criteria: { 1: 'Hazard-prone area or GIDA; or none of kit/knowledge/plan/savings; or affected and not recovered', 2: '1-2 of the items (and recovered or not affected, or partially recovered); or 3+ items and partially recovered', 3: '3+ of kit/knowledge/plan/savings, and fully recovered or not affected' } }
   ];
   var ES_W = 0.3333, SA_W = 0.6669, CUT3 = 2.83, CUT2 = 1.83;
   var ASSET_VARS = ['ref', 'aircon', 'wash', 'stove', 'radio', 'tv', 'stereo', 'landline', 'oldcp', 'smartcp', 'tablet',
@@ -108,7 +108,8 @@
   function r4(x) { return x === null ? null : Math.round(x * 100000) / 100000; }
   function f2(x) { return Math.round(x * 100) / 100; }
   function lb(map, v) { var n = num(v); return n === null ? '—' : (map[n] ? map[n] + ' (' + n + ')' : 'code ' + n); }
-  function skillCount(m) { var n = num(m.skills_n); return n !== null ? n : arr(m.skills).length; }
+  // Code 0 is the "None" choice, never a skill.
+  function skillCount(m) { var n = num(m.skills_n); return n !== null ? n : arr(m.skills).filter(function (x) { return x !== 0; }).length; }
   function isSHS(code) {
     var c = num(code); if (c === null) return false;
     return c === 24015 || (c >= 34013 && c <= 34018) || (c >= 34023 && c <= 34028) || c === 34033 || c >= 35013;
@@ -144,7 +145,7 @@
     if (rec) { lvl = 3; br = 'A.L3.recognized_skill'; }
     if (n >= 2 && !rec) { lvl = 3; br = 'A.L3.two_plus_skills'; }
     if (shs) { if (lvl !== 3) br = 'A.L3.shs_or_higher'; lvl = 3; }
-    why = n + ' skill(s)' + (n ? (rec ? ', at least one recognized' : ', none recognized') : '') + '; ' +
+    why = n + ' skill(s)' + (n === 0 ? ' (None)' : '') + (n ? (rec ? ', at least one recognized' : ', none recognized') : '') + '; ' +
       field + (blank(edu) ? ' not recorded' : ' ' + edu + (shs ? ' qualifies for the diploma criterion' : ' does not meet the diploma criterion'));
     var extra = [];
     if (shs) extra.push('A.code.' + shsBucket(edu));
@@ -188,14 +189,16 @@
     return { level: lvl, br: br, extra: extra, why: why };
   }
 
-  function mHealthSvc(m, rs) {
+  // "Did not want to avail" (99) and a non-professional provider (4) are Level 1 whether or not the member was sick (SCMD, 25 Nov 2026).
+  function mHealthSvc(m) {
     var a = num(m.avail_med), y = num(m.ynotavail_med), s = num(m.sickind), lvl = null, br = 'F.unanswered';
-    var l1 = a === 2 && (y === 99 || y === 4) && (rs === 'stata' || s === 1);
+    var l1 = a === 2 && (y === 99 || y === 4);
     if (l1) { lvl = 1; br = y === 4 ? 'F.L1.non_professional_provider' : 'F.L1.did_not_want'; }
     if (a === 2 && (y === 1 || y === 2 || y === 3)) { lvl = 2; br = ['', 'F.L2.poor_health_services', 'F.L2.poor_client_services', 'F.L2.no_accessible_services'][y]; }
     if (a === 1 || (a === 2 && y === 5)) { lvl = 3; br = a === 1 ? 'F.L3.availed' : 'F.L3.did_not_need'; }
     var why = 'availed: ' + yn(a) + (a === 2 ? ', reason: ' + lb(LBL.ynot, y) : '') + '; sick: ' + yn(s);
     if (lvl === null) why += a === 2 && y === null ? ' — no reason recorded, cannot be scored' : ' — not scored under this rule';
+    else if (l1 && s === 2) why += ' — Level 1 whether sick or not';
     var extra = [];
     if (a === 2 && (y === 99 || y === 4) && s === 2) extra.push('F.div.not_sick_but_did_not_avail');
     return { level: lvl, br: br, extra: extra, why: why };
@@ -268,13 +271,14 @@
     var a = age(m);
     if (a === null || a < 10) return ex('M.excl.under10', 'age ' + a + ' — outside coverage (10-64)');
     if (a > 64) return ex('M.excl.65plus', 'age ' + a + ' — outside coverage (10-64)');
-    var i = num(m.internet), d = arr(m.digiact), lvl = null, br = 'M.unanswered';
+    // 0 = "None" selected in all five activity groups.
+    var i = num(m.internet), picked = arr(m.digiact), d = picked.filter(function (x) { return x >= 1 && x <= 5; }), lvl = null, br = 'M.unanswered';
     if (i === 2) { lvl = 1; br = 'M.L1.no_internet'; }
     if (i === 1 && d.indexOf(1) >= 0) { lvl = 2; br = 'M.L2.info_data_literacy_only'; }
     if (i === 1 && d.some(function (x) { return x >= 2 && x <= 5; })) { lvl = 3; br = 'M.L3.higher_activity'; }
-    var why = 'used internet: ' + yn(i) + (i === 1 ? ', activity groups: ' + (d.length ? d.join(', ') : 'none') : '');
+    var why = 'used internet: ' + yn(i) + (i === 1 ? ', activity groups: ' + (d.length ? d.join(', ') : picked.indexOf(0) >= 0 ? 'None in all five' : 'not recorded') : '');
     if (i === 1 && !d.length) why += ' — no rule assigns a level';
-    var extra = d.filter(function (x) { return x >= 1 && x <= 5; }).map(function (x) { return 'M.act.' + x; });
+    var extra = d.map(function (x) { return 'M.act.' + x; });
     if (i === 1 && !d.length) extra.push('M.chk.internet_but_no_activity');
     if (a === 10 || a === 64) extra.push('M.bnd.age_' + a);
     return { level: lvl, br: br, extra: extra, why: why };
@@ -648,8 +652,9 @@
       if (loc === 1) { lvl = 1; br = 'Y.L1.hazard_prone'; }
       else if (gida === 1) { lvl = 1; br = 'Y.L1.gida'; }
       else if (counter === 1) { lvl = 1; br = 'Y.L1.no_items'; }
-      else if (counter === 2) { lvl = 2; br = 'Y.L2.one_to_two_items'; }
+      // A family that has not recovered is Level 1 even with 1-2 items (SCMD; BRVD v0.6 row 184 note).
       else if (exp === 1) { lvl = 1; br = 'Y.L1.affected_not_recovered'; }
+      else if (counter === 2) { lvl = 2; br = 'Y.L2.one_to_two_items'; }
       else if (exp === 2) { lvl = 2; br = 'Y.L2.three_plus_partially_recovered'; }
       else { lvl = 3; br = 'Y.L3.three_plus_ok'; }
     }
@@ -805,6 +810,7 @@
    *     behind it are not in dispute (when they differ, a whole number can come from other member levels);
    *   - the platform shows no decimals on its other family-average indicators in this run
    *     (a platform that keeps decimals elsewhere is not rounding).
+   * When the rules agree and the platform cuts the decimals it shows (1.66 for 1.6667; c.dp = decimals shown), the basis is 'truncated_decimals'.
    * Otherwise a value matching neither rule is FAIL, with `basis` saying why rounding was ruled out.
    */
   function judgeScore(c) {
@@ -815,6 +821,10 @@
     if (Math.abs(obs - exp) <= tol) return { verdict: 'PASS', basis: 'policy' };
     var rulesAgree = has(stata) && Math.abs(stata - exp) <= 1e-9;
     if (has(stata) && !rulesAgree && Math.abs(obs - stata) <= tol) return { verdict: 'STATA RULE', basis: 'stata' };
+    if (c.avg && c.dp >= 2 && rulesAgree) {
+      var unit = Math.pow(10, c.dp);
+      if (Math.abs(obs - Math.floor(exp * unit + 1e-9) / unit) < 1e-9) return { verdict: 'ROUNDING', basis: 'truncated_decimals' };
+    }
     if (c.avg && !isWhole(exp, 1e-9)) {
       var how = Math.abs(obs - Math.round(exp)) <= tol ? 'rounded' : Math.abs(obs - Math.floor(exp)) <= tol ? 'truncated' : '';
       if (how) {

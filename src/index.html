@@ -31,7 +31,7 @@ h2{font-size:19px;margin:0 0 4px}h3{font-size:15px;margin:0 0 10px}h4{margin:0 0
 .muted{color:var(--muted)}.small{font-size:12px}
 .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:#eef1f5;color:#3a4756;white-space:nowrap}
 .v-PASS{background:var(--passbg);color:var(--pass)}.v-FAIL{background:var(--failbg);color:var(--fail)}
-.v-STATA{background:var(--amberbg);color:var(--amber)}.v-ROUNDING{background:var(--amberbg);color:var(--amber)}.v-NA{background:var(--bluebg);color:var(--blue)}.v-CHECK{background:var(--bluebg);color:var(--blue)}
+.v-STATA{background:var(--amberbg);color:var(--amber)}.v-ROUNDING{background:var(--amberbg);color:var(--amber)}.v-NA,.v-NOTSCORED{background:var(--bluebg);color:var(--blue)}.v-CHECK{background:var(--bluebg);color:var(--blue)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}.kpi b{display:block;font-size:24px;line-height:1.1}.kpi .lab{font-size:12px;color:var(--muted)}
 table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
@@ -146,10 +146,10 @@ if (childActivityField) childActivityField.q = 'Has the member been engaged in a
 var TOTALS = [{ code: 'ES', name: 'Raw ES score' }, { code: 'SA', name: 'Raw SA score' }, { code: 'TOTAL', name: 'TOTAL SWDI score' }, { code: 'LOWB', name: 'LOWB (1-3)' }];
 var STATUSES = ['Draft', 'Entering in SWDI App', 'Synced — verify scores', 'Verified in SWDI App', 'Verified in 4Ps Forward', 'Blocked'];
 var STATA_NOTES = { A: 'BRVD Scoring Rules rows 8 and 10: the diploma test uses the recorded gradel code, and the family average includes members aged 18 or older.', C: 'Stata: family size = all captured members − OFW; under-15 income counted; no imputed rent.',
-  E: 'Stata counts insurance and accounts separately (A insurance + B account stays Level 2).', F: 'Stata Level 1 has no "got sick" qualifier.', G: 'Stata: not sick → Level 3 even if confined/chronic = Yes.',
+  E: 'Stata counts insurance and accounts separately (A insurance + B account stays Level 2).', G: 'Stata: not sick → Level 3 even if confined/chronic = Yes.',
   H: 'Stata ignores overweightind, and moderate overwrites severe.', I: 'Stata keeps piped (11, 12) in the > 30 min rule; blank minutes count as > 30.', J: 'Stata operator precedence: any toilet with shared = No passes the Level 2 line.',
   L: 'Stata overwrite turns all-No (Level 1) into Level 2.', O: 'Stata overwrite ignores hazard-prone (light → 2, strong → 3).', P: 'Stata overwrite ignores hazard-prone.', U: 'Stata: any resolved problem overwrites to Level 3 (no worst case).',
-  W: 'Stata: any vaccine counts, enrolment only, needs all 4 for Level 3.', Y: 'Stata: any kit item counts, savings not counted, volcanic eruption missing; 3 items without savings → no level.' };
+  W: 'Stata: any vaccine counts, enrolment only, needs all 4 for Level 3.', Y: 'Stata: any kit item counts, savings not counted, volcanic eruption missing; 3 items without savings → no level; with 1-2 items, Level 2 overwrites "not recovered" (Level 1).' };
 var ALIASES = { A: ['employable skill'], B: ['employment'], C: ['income'], D: ['social security', 'sss/gsis', 'sss'], E: ['financial institution'],
   F: ['availment', 'accessible health', 'health service', 'access to health'], G: ['health condition'], H: ['nutrition'], I: ['drinking water', 'improved water'], J: ['sanitary', 'toilet', 'sanitation'],
   K: ['garbage'], L: ['functional literacy'], M: ['digital literacy'], N: ['school', 'attendance', 'enrolment', 'enrollment'], O: ['roof'], P: ['outer wall', 'walls'],
@@ -190,7 +190,7 @@ function afterPaint(label, work) {
     }, 20);
   });
 }
-function vcls(v) { return v === 'PASS' ? 'v-PASS' : v === 'FAIL' ? 'v-FAIL' : v === 'STATA RULE' ? 'v-STATA' : v === 'ROUNDING' ? 'v-ROUNDING' : v === 'N/A CHECK' ? 'v-NA' : v === 'CHECK' ? 'v-CHECK' : ''; }
+function vcls(v) { return v === 'PASS' ? 'v-PASS' : v === 'FAIL' ? 'v-FAIL' : v === 'STATA RULE' ? 'v-STATA' : v === 'ROUNDING' ? 'v-ROUNDING' : v === 'N/A CHECK' ? 'v-NA' : v === 'NOT SCORED' ? 'v-NOTSCORED' : v === 'CHECK' ? 'v-CHECK' : ''; }
 function pill(v) { return v ? '<span class="pill ' + vcls(v) + '">' + esc(v) + '</span>' : ''; }
 function store(k, v) { try { localStorage.setItem('swdi-runner-' + k, JSON.stringify(v)); } catch (e) {} }
 function load(k) { try { return JSON.parse(localStorage.getItem('swdi-runner-' + k)); } catch (e) { return null; } }
@@ -264,6 +264,7 @@ function finalVerdict(r) {
   if (vs.indexOf('FAIL') >= 0) return 'FAIL';
   if (vs.indexOf('STATA RULE') >= 0) return 'STATA RULE';
   if (vs.indexOf('ROUNDING') >= 0) return 'ROUNDING';
+  if (vs.indexOf('NOT SCORED') >= 0) return 'NOT SCORED';
   if (vs.indexOf('N/A CHECK') >= 0) return 'N/A CHECK';
   if (vs.indexOf('CHECK') >= 0) return 'CHECK';
   return 'PASS';
@@ -367,11 +368,11 @@ function renderOverview() {
   var html = '<h2>Overview</h2><p class="muted">' + runs.length + ' test run(s) · ' + SC.length + ' scenarios in the catalog (levels, boundaries, option spread, rule conflicts, open rules).</p><div class="kpis">' +
     kpi(runs.filter(function (r) { return r.Status === 'Verified in 4Ps Forward'; }).length + ' / ' + runs.length, 'runs verified in 4Ps Forward') + kpi(exe.length, 'indicator checks executed') +
     kpi('<span style="color:var(--pass)">' + cnt('PASS') + '</span>', 'PASS') + kpi('<span style="color:var(--fail)">' + cnt('FAIL') + '</span>', 'FAIL') +
-    kpi('<span style="color:var(--amber)">' + (cnt('STATA RULE') + cnt('ROUNDING')) + '</span>', 'STATA RULE / ROUNDING') +
+    kpi('<span style="color:var(--amber)">' + (cnt('STATA RULE') + cnt('ROUNDING')) + '</span>', 'STATA RULE / ROUNDING') + kpi('<span style="color:var(--blue)">' + cnt('NOT SCORED') + '</span>', 'NOT SCORED') +
     kpi(Math.round(100 * tested / SC.length) + '%', 'catalog scenarios with an observed check (' + tested + '/' + SC.length + ') · ' + planned + ' exercised') + '</div>';
   if (runs.length) {
     var rs = runs.slice().sort(function (a, b) { return String(a['Run ID']).localeCompare(String(b['Run ID'])); });
-    html += '<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3>Indicator × test run</h3><div class="legend">' + pill('PASS') + pill('FAIL') + pill('STATA RULE') + pill('ROUNDING') + pill('N/A CHECK') +
+    html += '<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><h3>Indicator × test run</h3><div class="legend">' + pill('PASS') + pill('FAIL') + pill('STATA RULE') + pill('ROUNDING') + pill('NOT SCORED') + pill('N/A CHECK') +
       '<span class="pill cf">rule conflict</span><span class="muted">cell = expected level</span></div></div><div class="heat"><table><tr><th></th>' + rs.map(function (r) { return '<th title="' + esc(r['Family ID (HHID)']) + '">' + esc(String(r['Run ID']).slice(-11)) + '</th>'; }).join('') + '</tr>';
     IND.concat([TOTALS[2], TOTALS[3]]).forEach(function (d) {
       html += '<tr><td class="l"><b>' + d.code + '</b> ' + esc(d.name) + '</td>' + rs.map(function (r) {
@@ -673,7 +674,8 @@ function ctrl(f, val, key) {
   if (f.t === 'multi') {
     var sel = SWDI.arr(val), L2 = LISTS[f.list] || {};
     return '<div class="opts">' + Object.keys(L2).map(function (k) { return '<label><input type="checkbox" data-key="' + key + '" data-opt="' + k + '"' + (sel.indexOf(Number(k)) >= 0 ? ' checked' : '') + '> ' + k + ' ' + esc(L2[k]) + '</label>'; }).join('') +
-      (f.list === 'disastkit' ? '<button class="btn sm" data-all="' + key + '">tick all</button>' : '') + '</div>';
+      (f.list === 'disastkit' ? '<button class="btn sm" data-all="' + key + '">tick all</button>' : '') + '</div>' +
+      (f.v === 'digiact' ? '<div class="small muted">In the app, select None for every group that is not ticked here.' + (sel.length ? '' : ' <b>Required: tick a group, or None in all five groups.</b>') + '</div>' : '');
   }
   return '';
 }
@@ -702,6 +704,8 @@ function displayVal(f, v) {
   if (f.t === 'yn') return v == 1 ? 'Yes' : v == 2 ? 'No' : v;
   if (f.t === 'chk') return v == 1 ? 'ticked' : 'not ticked';
   if (f.t === 'sel') return v + ' ' + listLabel(f.list, v);
+  if (f.v === 'skills_n' && Number(v) === 0) return '0 (None)';
+  if (f.v === 'digiact' && String(v) === '0') return 'None in all five groups';
   return String(v);
 }
 function sectionsHTML(scope, rec, sug, no, age) {
@@ -741,6 +745,8 @@ function tabAnswers() {
     if (e.target.dataset.opt) {
       var sel = SWDI.arr(rec[v]), o = Number(e.target.dataset.opt);
       if (e.target.checked && sel.indexOf(o) < 0) sel.push(o); if (!e.target.checked) sel = sel.filter(function (x) { return x !== o; });
+      // "None in all five groups" and a group cannot both be ticked.
+      if (v === 'digiact' && e.target.checked) sel = o === 0 ? [0] : sel.filter(function (x) { return x !== 0; });
       rec[v] = sel.sort(function (a, b) { return a - b; }).join(';');
     } else if (e.target.type === 'checkbox') rec[v] = e.target.checked ? 1 : 2;
     else rec[v] = e.target.type === 'text' || e.target.value === '' ? e.target.value : Number(e.target.value);
@@ -820,6 +826,27 @@ function tolFor(code) {
   var d = IND.filter(function (x) { return x.code === code; })[0];
   return d ? Math.max(ltol, wtol / d.w) : (code === 'LOWB' ? 0.01 : 0.0015);
 }
+/** Decimals of an observed value ("1.67" → 2), without trailing zeros: the sheet stores numbers, so "1.70" must grade the same before and after a save. */
+function decimalsOf(raw) { var m = /\.(\d+)/.exec(String(raw === undefined || raw === null ? '' : raw)); return m ? m[1].replace(/0+$/, '').length : 0; }
+/** A weighted score is stored as its level with 5+ decimals (see storedLevel); it is graded with the weighted tolerance after reloading too. */
+function gradedDecimals(p, code) {
+  var O = S.run.obs, dp = decimalsOf(O[p][code]), d = IND.filter(function (x) { return x.code === code; })[0];
+  return d && (O.mode[p] === 'weighted' || dp > 4) ? 0 : dp;
+}
+function storedLevel(x) {
+  var v = Math.round(x * 100000) / 100000, dp = decimalsOf(v);
+  return dp >= 2 && dp <= 4 ? Math.round(v * 1000000 + 1) / 1000000 : v;   // keep the mark of a converted value when its last digits are zeros
+}
+/** Tolerance for one observed value: a score typed with 2+ decimals must match to the decimals shown (1.67 is 1.6667; 1.66 is not). Totals tighten at 4 decimals. */
+function obsTol(p, code) {
+  var dp = gradedDecimals(p, code), d = IND.filter(function (x) { return x.code === code; })[0];
+  if (d ? dp < 2 : dp < 4 || code === 'LOWB') return tolFor(code);
+  return Math.max(0.0001, 0.5 * Math.pow(10, -dp)) + 1e-9;
+}
+/** Indicators with an expected level that a platform shows as N/A, limited to those behind one total. */
+function notScored(p, code, t) {
+  return IND.filter(function (d) { return (code === 'TOTAL' || code === 'LOWB' || d.dim === code) && t.indicators[d.code].level !== null && isNA(S.run.obs[p][d.code]); }).map(function (d) { return d.code; });
+}
 function isAvg(code) { var d = IND.filter(function (x) { return x.code === code; })[0]; return !!d && d.agg === 'AVG'; }
 /** The platform's other family-average indicators in this run, as levels (evidence of whether it keeps decimals). */
 function avgObserved(p, except) {
@@ -843,14 +870,19 @@ function isNA(v) { return /^\s*(n\/?a|not computed|none)\s*$/i.test(String(v ===
 /** Full grading of one platform value: { verdict, basis, ... } (see SWDI.judgeScore). */
 function judgeDetail(p, code, both) {
   var R = S.run, O = R.obs, t = both.target, raw = num(O[p][code]);
-  if (isNA(O[p][code]) && t.indicators[code]) return t.indicators[code].level === null ? { verdict: 'PASS', basis: 'policy' } : { verdict: 'FAIL', basis: 'not_computed' };
+  if (isNA(O[p][code]) && t.indicators[code]) return t.indicators[code].level === null ? { verdict: 'PASS', basis: 'policy' } : { verdict: 'NOT SCORED', basis: 'not_computed' };
+  // A total built from a partial score cannot be compared with the full expected total.
+  if (!t.indicators[code] && String(O[p][code] === undefined || O[p][code] === null ? '' : O[p][code]).trim() !== '') {
+    var gaps = notScored(p, code, t);
+    if (gaps.length) return { verdict: 'NOT SCORED', basis: 'partial', missing: gaps };
+  }
   if (raw === null) return { verdict: '', basis: '' };
   var v = compareValues(p, code, both);
-  return SWDI.judgeScore({ code: code, obs: v.obs, exp: v.exp, stata: v.stata, tol: tolFor(code), avg: isAvg(code), others: isAvg(code) ? avgObserved(p, code) : [] });
+  return SWDI.judgeScore({ code: code, obs: v.obs, exp: v.exp, stata: v.stata, tol: obsTol(p, code), dp: gradedDecimals(p, code), avg: isAvg(code), others: isAvg(code) ? avgObserved(p, code) : [] });
 }
 function judgeOne(p, code, both) { return judgeDetail(p, code, both).verdict; }
 var PLATFORMS = { swdi: 'SWDI App', fpf: '4Ps Forward' };
-var EXPLAINED = ['FAIL', 'STATA RULE', 'ROUNDING', 'N/A CHECK'];
+var EXPLAINED = ['FAIL', 'STATA RULE', 'ROUNDING', 'NOT SCORED', 'N/A CHECK'];
 // A collapsible block in the app; expanded (always readable) in the printed / PDF test record.
 function fold(summary, body, open) {
   return open ? '<div class="fold"><div class="fold-h">' + summary + '</div>' + body + '</div>' : '<details><summary>' + summary + '</summary>' + body + '</details>';
@@ -894,7 +926,7 @@ function compareValues(p, code, both) {
 function mixSentence(p, code, both, v) {
   if (!isAvg(code) || v.obs === null) return '';
   var lv = function (l) { return l === null || l === undefined ? 'excluded' : 'L' + l; };
-  var mix = SWDI.memberMixFor(both.target.indicators[code], both.stata.indicators[code], v.obs, tolFor(code));
+  var mix = SWDI.memberMixFor(both.target.indicators[code], both.stata.indicators[code], v.obs, obsTol(p, code));
   var t = both.target.indicators[code], st = both.stata.indicators[code], differ = (t.members || []).some(function (m) {
     var o = (st.members || []).filter(function (x) { return x.no === m.no; })[0];
     return !o || o.level !== m.level;
@@ -911,16 +943,20 @@ function verdictLead(p, code, both, result) {
   var expTxt = none(v.exp) ? 'no level' : f(v.exp), stTxt = none(v.stata) ? 'no level' : f(v.stata);
   var j = judgeDetail(p, code, both), whole = j.looksLike === 'truncated' ? 'the whole number left when the decimals of ' : 'the whole number nearest to ';
   if (result === 'FAIL') {
-    if (v.na) return plat + ' shows no score (N/A), but the policy rule expects ' + expTxt + ' (BRVD Stata: ' + stTxt + '). The platform did not compute an indicator that has a level.';
     var head = plat + ' shows <b>' + obsTxt + '</b>. The policy rule expects <b>' + expTxt + '</b> and the BRVD Stata command gives <b>' + stTxt + '</b>, so neither rule explains the platform score.';
     if (j.basis === 'criteria_disputed') return head + ' <b>Not a rounding issue:</b> ' + f(v.obs) + ' is ' + whole + expTxt + (j.looksLike === 'truncated' ? ' are dropped' : '') +
       ', but the policy rule and the Stata command give different family results for this indicator, so the conditions the platform applied are not confirmed. A whole number here comes from different member levels — members counted or graded by other conditions — not only from rounding.' +
       mixSentence(p, code, both, v) + ' Compare the members ' + plat + ' counted, and their levels, with the breakdowns below.';
     if (j.basis === 'keeps_decimals') return head + ' <b>Not a rounding issue:</b> the policy rule and the Stata command agree on ' + expTxt + ', but ' + plat + ' keeps the decimals of other family averages in this run (' +
       j.decimals.map(function (o) { return o.code + ' ' + dec4(o.obs); }).join(', ') + '), so it does not round family averages. The whole number here comes from different member levels — members counted or graded by other conditions. Compare the members ' + plat + ' counted, and their levels, with the breakdown below.';
-    return head + mixSentence(p, code, both, v) + (none(v.exp) || v.obs === null ? '' : ' Difference from the policy result: ' + dec4(v.obs - v.exp) + ' (allowed tolerance ±' + dec4(tolFor(code)) + ').');
+    return head + mixSentence(p, code, both, v) + (none(v.exp) || v.obs === null ? '' : ' Difference from the policy result: ' + dec4(v.obs - v.exp) + ' (allowed tolerance ±' + dec4(obsTol(p, code)) + ').');
+  }
+  if (result === 'NOT SCORED') {
+    if (j.basis === 'partial') return plat + ' shows <b>' + obsTxt + '</b>, but it did not score ' + esc(j.missing.join(', ')) + ', so this is a partial score. The full expected result is <b>' + expTxt + '</b>. The two are not compared.';
+    return plat + ' shows no score (N/A), but the policy rule expects <b>' + expTxt + '</b> (BRVD Stata: ' + stTxt + '). Check first that the platform was ready (for Income: the food and poverty thresholds of the province are synced to the device). If it was ready, report it as a defect.';
   }
   if (result === 'STATA RULE') return plat + ' shows <b>' + obsTxt + '</b>, which matches the BRVD Stata command as written (<b>' + stTxt + '</b>) and not the policy rule (<b>' + expTxt + '</b>). The DSWD-requested rule change is not implemented.';
+  if (result === 'ROUNDING' && j.basis === 'truncated_decimals') return plat + ' shows <b>' + obsTxt + '</b>. The policy rule and the BRVD Stata command both give <b>' + expTxt + '</b>, so the criteria were followed, but ' + plat + ' cuts the decimals instead of rounding them.';
   if (result === 'ROUNDING') return plat + ' shows <b>' + obsTxt + '</b>. The policy rule and the BRVD Stata command both give the family average <b>' + expTxt + '</b>, so the criteria and conditions were followed and only the decimals differ: ' +
     plat + (j.basis === 'truncated' ? ' drops the decimals (truncates) ' : ' rounds the family average to the nearest whole level ') + 'instead of keeping ' + expTxt + '.' +
     (function (o) { return o.length ? ' Its other family averages in this run are whole numbers too (' + o.map(function (x) { return x.code + ' ' + dec4(x.obs); }).join(', ') + ').' : ''; })(avgObserved(p, code));
@@ -963,7 +999,7 @@ function tabVerify() {
         return '<tr style="background:#f7f9fc"><td><b>' + totalName(d, O.mode[p]) + '</b></td><td class="num">' + totalExpected(d.code, O.mode[p], tt) + '</td><td class="num"><input class="vin" data-p="' + p + '" data-c="' + d.code + '" value="' + esc(O[p][d.code] === undefined ? '' : O[p][d.code]) + '"></td><td id="v' + p + d.code + '"></td></tr>';
       }).join('') + '</table></div>';
   }
-  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled); the Expected column shows them re-scaled under <b>level</b> and raw weighted under <b>weighted score</b>. Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score). <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison; <b>ROUNDING</b> = the policy and Stata rules agree on a family average with decimals and the platform shows it as a whole number (criteria followed, decimals dropped); when the rules disagree on the members, or the platform keeps decimals elsewhere, a whole number is graded <b>FAIL</b>. Every verdict other than PASS has a <b>Why?</b> row below it with the member responses, criteria and calculations.</div>' +
+  $('#tabBody').innerHTML = '<div class="banner info">Type what each platform shows after the assessment is submitted and synced. Levels may be family averages (e.g. 2.33); weighted scores are converted with the weight. ES/SA accept raw or re-scaled (4Ps Forward shows re-scaled); the Expected column shows them re-scaled under <b>level</b> and raw weighted under <b>weighted score</b>. Type <b>N/A</b> when a platform shows no score for an indicator (e.g. a Partial score): it is marked <b>NOT SCORED</b>, and the totals that depend on it are not compared. Type the decimals exactly as shown: a score with 2 or more decimals must match to those decimals. <b>STATA RULE</b> means the observed score matches the BRVD Stata comparison; <b>ROUNDING</b> = the policy and Stata rules agree on a family average with decimals and the platform shows it as a whole number or cuts the decimals (criteria followed, decimals dropped); when the rules disagree on the members, or the platform keeps decimals elsewhere, a whole number is graded <b>FAIL</b>. Every verdict other than PASS has a <b>Why?</b> row below it with the member responses, criteria and calculations.</div>' +
     testDetailsCard(R) +
     '<div class="row noprint" style="margin-bottom:10px"><button class="btn sm" id="goImport">Import 4Ps Forward scores from the capture extension…</button>' + (R.fpfUrl ? '<a class="small" target="_blank" rel="noopener" href="' + esc(R.fpfUrl) + '">Open in 4Ps Forward ↗</a>' : '') + '</div>' +
     '<div class="grid2">' + col('swdi', 'SWDI App') + col('fpf', '4Ps Forward') + '</div>' +
@@ -1004,6 +1040,7 @@ function tabVerify() {
   });
   $('#saveVer').onclick = function () {
     var hasF = Object.keys(O.fpf).some(function (k) { return O.fpf[k] !== ''; }), hasS = Object.keys(O.swdi).some(function (k) { return O.swdi[k] !== ''; });
+    if (hasS && !R.appVer) { toast('Enter the SWDI App version (build) under Test details first — results are kept apart by build', 7000); $('#dAppVer').focus(); return; }
     if (hasF) R.status = 'Verified in 4Ps Forward'; else if (hasS && STATUSES.indexOf(R.status) < 3) R.status = 'Verified in SWDI App';
     saveRun('results');
   };
@@ -1018,7 +1055,7 @@ function testDetailsCard(R) {
   }
   return '<div class="card"><h3>Test details for the developer</h3><p class="small muted" style="margin:-6px 0 10px">Record the app version and when each platform was used, so the developer can match this record to their logs and builds. These go on the exported test record.</p>' +
     '<div class="row" style="align-items:flex-start">' +
-    '<label class="field">SWDI App version<input id="dAppVer" value="' + esc(R.appVer) + '" placeholder="e.g. 2.4.1 (build 118)"><span class="small muted">As shown in the SWDI App (About / Settings)</span></label>' +
+    '<label class="field">SWDI App version<input id="dAppVer" value="' + esc(R.appVer) + '" placeholder="e.g. 132 (baf8776)"><span class="small muted">Required · as shown in the SWDI App (About / Settings)</span></label>' +
     dt('dAppAt', 'SWDI App used (date &amp; time)', R.appAt, 'When the assessment was entered and synced') +
     dt('dFpfAt', '4Ps Forward used (date &amp; time)', R.fpfAt, 'When the score was checked on the web; filled by a capture') +
     '<label class="field" style="flex:1;min-width:240px">4Ps Forward assessment shown<input id="dFpfAssess" value="' + esc(R.fpfAssess) + '" placeholder="Period · date · status as shown in the Assessment Review"><span class="small muted">Filled by a capture; type it if you read it from the screen</span></label>' +
@@ -1067,7 +1104,7 @@ var REC_CSS = '.rec{font:11px/1.4 Arial,Helvetica,sans-serif;color:#1d2733;backg
   '.rec th,.rec td{border:1px solid #cfd6df;padding:3px 5px;text-align:left;vertical-align:top;font-size:10.5px}' +
   '.rec th{background:#eef2f7;color:#2b3846;font-weight:bold}.rec .num{text-align:right}.rec .meta th{width:19%}.rec .meta td{width:31%}' +
   '.rec .pill{display:inline-block;padding:0 6px;border-radius:8px;font-weight:bold;font-size:10px;background:#eef1f5;color:#3a4756;white-space:nowrap}' +
-  '.rec .v-PASS{background:#e2f5ea;color:#1b7f4b}.rec .v-FAIL{background:#fde4e2;color:#b42318}.rec .v-STATA,.rec .v-ROUNDING{background:#fff3d6;color:#9a6200}.rec .v-NA,.rec .v-CHECK{background:#e3eefc;color:#1d5fb4}' +
+  '.rec .v-PASS{background:#e2f5ea;color:#1b7f4b}.rec .v-FAIL{background:#fde4e2;color:#b42318}.rec .v-STATA,.rec .v-ROUNDING{background:#fff3d6;color:#9a6200}.rec .v-NA,.rec .v-NOTSCORED,.rec .v-CHECK{background:#e3eefc;color:#1d5fb4}' +
   '.rec .finding{border:1px solid #cfd6df;border-left:4px solid #b42318;padding:6px 8px;margin:8px 0;page-break-inside:avoid}' +
   '.rec .finding.grp{page-break-inside:auto;break-inside:auto}.rec .frun{page-break-inside:avoid;break-inside:avoid}.rec .finding.amber{border-left-color:#e2a400}.rec .finding.blue{border-left-color:#1d5fb4}.rec .finding.green{border-left-color:#1b7f4b}' +
   '.rec .lead{background:#f7f9fc;padding:4px 6px;margin:4px 0}.rec .fold{margin:6px 0 0}.rec .fold-h{font-weight:bold;color:#1f3a5f;margin:6px 0 2px}' +
@@ -1271,13 +1308,13 @@ function buildPayload() {
   addEntries('hh', 0, R.values.hh, R.suggested.hh, 'Household');
   R.roster.forEach(function (m) { if (Number(m.status) === 1) addEntries('m', m.no, R.values.m[m.no] || {}, R.suggested.m[m.no], 'M' + m.no + ' ' + m.name); });
   var scores = [], passN = 0, badN = 0;
-  function obsLevel(p, d) { if (isNA(R.obs[p][d.code])) return 'N/A'; var raw = num(R.obs[p][d.code]); if (raw === null) return ''; return d.w && R.obs.mode[p] === 'weighted' ? Math.round(SWDI.interpretObserved(d.code, raw, 'weighted') * 100000) / 100000 : raw; }
+  function obsLevel(p, d) { if (isNA(R.obs[p][d.code])) return 'N/A'; var raw = num(R.obs[p][d.code]); if (raw === null) return ''; return d.w && R.obs.mode[p] === 'weighted' ? storedLevel(SWDI.interpretObserved(d.code, raw, 'weighted')) : raw; }
   IND.concat(TOTALS).forEach(function (d) {
     var isI = !!d.w, a = isI ? t.indicators[d.code] : null, b = isI ? s.indicators[d.code] : null;
     var row = { Key: 'x|' + d.code, Code: d.code, Indicator: d.name, Weight: d.w || '', 'Expected level (target)': isI ? (a.level === null ? '' : Math.round(a.level * 100000) / 100000) : tt[d.code],
       'Expected weighted': isI ? (a.weighted === null ? '' : a.weighted) : '', 'Stata level': isI ? (b.level === null ? '' : Math.round(b.level * 100000) / 100000) : (st[d.code] === null ? '' : st[d.code]),
       'Rule conflict': isI ? both.divergent.indexOf(d.code) >= 0 : tt[d.code] !== st[d.code],
-      'How graded (target)': isI ? a.why : '', 'Member breakdown': isI && a.members ? a.members.map(function (m) { return 'M' + m.no + ' ' + m.name + ' (' + m.age + '): ' + memberResult(m) + ' — ' + m.why; }).join('\n') : '',
+      'How graded (target)': isI ? a.why : d.code === 'ES' || d.code === 'SA' ? 'Raw (weighted sum) ' + fmt(tt[d.code], 5) + ' · re-scaled (1-3) ' + dec4(tt[d.code + '_R']) + '. Stata raw ' + fmt(st[d.code], 5) + ' · re-scaled ' + dec4(st[d.code + '_R']) + '. The observed value is compared with the scale it is closer to.' : '', 'Member breakdown': isI && a.members ? a.members.map(function (m) { return 'M' + m.no + ' ' + m.name + ' (' + m.age + '): ' + memberResult(m) + ' — ' + m.why; }).join('\n') : '',
       'Stata as written': isI && both.divergent.indexOf(d.code) >= 0 ? b.why : '',
       'SWDI App observed (level)': obsLevel('swdi', d), 'SWDI App verdict': judgeOne('swdi', d.code, both), '4Ps Forward observed (level)': obsLevel('fpf', d), '4Ps Forward verdict': judgeOne('fpf', d.code, both),
       'Scenarios exercised': '|' + (isI ? a.branches.concat(b.branches.filter(function (x) { return /\.div\.|stata_missing|precedence_bug/.test(x) && x[0] === d.code; })) : d.code === 'LOWB' ? t.branches.filter(function (x) { return x[0] === 'Z'; }) : []).filter(function (x, i, arr) { return arr.indexOf(x) === i; }).join('|') + '|',
@@ -1381,7 +1418,7 @@ function applyCap(R, cap) {
   if (shown) R.fpfAssess = shown;
   if (STATUSES.indexOf(R.status) < 2) R.status = 'Synced — verify scores';
   notes.push('4Ps Forward scores filled from the capture of ' + esc(new Date(cap.capturedAt).toLocaleString()) + (cap.status ? ' (assessment status: ' + esc(cap.status) + ')' : '') + '. Check them against the screen, then save.');
-  if (o.partial) notes.push('4Ps Forward computed only ' + o.partial.n + ' of ' + o.partial.of + ' indicators; ' + o.missing.join(', ') + ' are set to N/A — a FAIL there means the expected result has a level.');
+  if (o.partial) notes.push('4Ps Forward computed only ' + o.partial.n + ' of ' + o.partial.of + ' indicators; ' + o.missing.join(', ') + ' are set to N/A — NOT SCORED there means the expected result has a level.');
   var cm = (cap.members || []).filter(function (m) { return !m.excluded; });
   if (cm.length && R.roster.length) {
     var a = cm.map(function (m) { return Number(m.age); }).sort().join(','), b = R.roster.filter(function (m) { return Number(m.status) === 1; }).map(function (m) { return Number(m.age); }).sort().join(',');
@@ -1445,7 +1482,7 @@ function takeHash(h) {
 }
 
 // ---------- reports ----------
-var SEV = { 'FAIL': 1, 'STATA RULE': 2, 'ROUNDING': 3, 'N/A CHECK': 4 };
+var SEV = { 'FAIL': 1, 'STATA RULE': 2, 'ROUNDING': 3, 'NOT SCORED': 4, 'N/A CHECK': 5 };
 function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function weekRange(offset) { var d = new Date(); var day = (d.getDay() + 6) % 7; var mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - day + 7 * offset); var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6); return [ymd(mon), ymd(sun)]; }
 function runDate(r) { return String(r['Interview date'] || r['Updated at'] || r['Created at'] || '').slice(0, 10); }
@@ -1479,11 +1516,11 @@ function buildReport(from, to, kind, instance) {
       g2.items.push({ run: s['Run ID'], platform: 'both', expected: s['Expected level (target)'], stata: s['Stata level'], observed: 'App ' + a + ' / 4Ps Forward ' + b, why: s['How graded (target)'] });
     }
   });
-  var findings = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (x, y) { return (SEV[x.verdict] || 5) - (SEV[y.verdict] || 5) || x.code.localeCompare(y.code); });
+  var findings = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (x, y) { return (SEV[x.verdict] || 6) - (SEV[y.verdict] || 6) || x.code.localeCompare(y.code); });
   // per indicator
   var perInd = IND.concat([TOTALS[2], TOTALS[3]]).map(function (d) {
     var rs = exe.filter(function (s) { return s.Code === d.code; });
-    return { code: d.code, name: d.name, n: rs.length, pass: count(rs, 'PASS'), fail: count(rs, 'FAIL'), stata: count(rs, 'STATA RULE'), round: count(rs, 'ROUNDING'), na: count(rs, 'N/A CHECK') };
+    return { code: d.code, name: d.name, n: rs.length, pass: count(rs, 'PASS'), fail: count(rs, 'FAIL'), stata: count(rs, 'STATA RULE'), round: count(rs, 'ROUNDING'), ns: count(rs, 'NOT SCORED'), na: count(rs, 'N/A CHECK') };
   });
   // coverage: cumulative to end of period, and newly exercised within the period
   var before = {}, upto = {};
@@ -1587,14 +1624,15 @@ function drawReport() {
 var VERDICT_MEANING = {
   'FAIL': 'Platform score matches neither the DSWD target rule nor the Stata command as written.',
   'STATA RULE': 'The observed score matches the BRVD Stata comparison: the DSWD-requested rule change is not implemented.',
-  'ROUNDING': 'The policy and Stata rules agree on the family average (criteria followed); the platform rounds or truncates it to a whole level instead of keeping the decimals.',
+  'ROUNDING': 'The policy and Stata rules agree on the family average (criteria followed); the platform rounds or truncates it to a whole level, or cuts the decimals it shows.',
+  'NOT SCORED': 'The platform did not score this indicator, or the total is a partial score. It is not compared with the full expected result.',
   'PLATFORMS DIFFER': 'SWDI App and 4Ps Forward show different values for the same assessment.'
 };
 /** One run inside a finding group, explained in full (the same block as the exported test record). */
 function reportRunBlock(f, id, det, label, explained) {
   var meta = runMeta(id) || {}, items = f.items.filter(function (x) { return x.run === id; });
   var head = '<div class="frun-h">' + esc(id) + ' · Family ID ' + esc(meta['Family ID (HHID)'] || '—') + (meta['Household head'] ? ' · ' + esc(meta['Household head']) : '') +
-    ' · ' + esc(instanceName(meta.Environment) || 'Unspecified instance') + (runDate(meta) ? ' · ' + esc(runDate(meta)) : '') + (meta.Tester ? ' · ' + esc(meta.Tester) : '') + '</div>';
+    ' · ' + esc(instanceName(meta.Environment) || 'Unspecified instance') + (meta['SWDI App version'] ? ' · build ' + esc(meta['SWDI App version']) : '') + (runDate(meta) ? ' · ' + esc(runDate(meta)) : '') + (meta.Tester ? ' · ' + esc(meta.Tester) : '') + '</div>';
   var e = det.get(id), d = IND.concat(TOTALS).filter(function (x) { return x.code === f.code; })[0];
   if (!d) return '';
   if (!e) return '<div class="frun">' + head + '<p class="muted">' + (det.loading ? 'Loading the saved answers to explain this run…' : 'Not loaded.') + '</p></div>';
@@ -1616,13 +1654,16 @@ function reportHTML(R, det) {
   var c = S.data.config, final = R.kind === 'final';
   var period = final ? 'All runs to date' : R.from + ' to ' + R.to;
   var pct = function (a, b) { return b ? Math.round(100 * a / b) + '%' : '—'; };
+  var builds = R.runs.map(function (r) { return String(r['SWDI App version'] || '').trim(); }).filter(function (v, i, a) { return v && a.indexOf(v) === i; });
   var h = '<div class="rec"><h1>' + (final ? 'SWDI Scoring Test — Final report' : 'SWDI Scoring Test — Weekly report') + '</h1>' +
     '<p class="sub">Period: <b>' + esc(period) + '</b> · Test instance: ' + esc(R.instance === 'both' ? testInstances.join(' and ') : R.instance === 'unspecified' ? 'Unspecified' : R.instance || 'All runs') + ' · Generated ' + esc(localStamp(new Date())) + (tester() ? ' by ' + esc(tester()) : '') + (c.app_version ? ' · SWDI App build ' + esc(c.app_version) : '') + '</p>';
   h += '<h2>1. Summary</h2><table><tr><td>Test runs (interviews) in period</td><td class="num"><b>' + R.runs.length + '</b></td><td>Cumulative runs</td><td class="num"><b>' + R.runsAll.length + '</b></td></tr>' +
     '<tr><td>Runs verified in 4Ps Forward</td><td class="num">' + R.verified4pf + '</td><td>Indicator checks executed</td><td class="num">' + R.exe.length + '</td></tr>' +
     '<tr><td>' + pill('PASS') + '</td><td class="num">' + R.count(R.exe, 'PASS') + ' (' + pct(R.count(R.exe, 'PASS'), R.exe.length) + ')</td><td>' + pill('FAIL') + '</td><td class="num">' + R.count(R.exe, 'FAIL') + '</td></tr>' +
     '<tr><td>' + pill('STATA RULE') + ' (matches BRVD comparison)</td><td class="num">' + R.count(R.exe, 'STATA RULE') + '</td><td>' + pill('ROUNDING') + '</td><td class="num">' + R.count(R.exe, 'ROUNDING') + '</td></tr>' +
+    '<tr><td>' + pill('NOT SCORED') + '</td><td class="num">' + R.count(R.exe, 'NOT SCORED') + '</td><td>SWDI App builds in these runs</td><td class="num">' + (builds.length ? esc(builds.join('; ')) : '—') + '</td></tr>' +
     '<tr><td>Scenario coverage (cumulative)</td><td class="num">' + R.covered + ' / ' + R.total + ' (' + pct(R.covered, R.total) + ')</td><td>' + (final ? 'Not yet covered' : 'New scenarios this period') + '</td><td class="num">' + (final ? R.missing.length : R.newly) + '</td></tr></table>';
+  if (builds.length > 1) h += '<p class="warn">This report mixes ' + builds.length + ' SWDI App builds. A finding on one build may be corrected in another: check the build of each run in section 4.</p>';
   var sev = R.findings.filter(function (f) { return f.verdict !== 'N/A CHECK'; }), explained = {};
   h += '<h2>2. Findings · ' + sev.length + '</h2>';
   if (!sev.length) h += '<p class="muted">No mismatches in this period.</p>';
@@ -1641,10 +1682,10 @@ function reportHTML(R, det) {
       }).join('') + '</table>' +
       (det.on ? runs.map(function (id) { return reportRunBlock(f, id, det, 'F' + (i + 1), explained); }).join('') : '') + '</div>';
   });
-  h += '<h2>3. Results by indicator</h2><table><tr><th>Indicator</th><th class="num">Checks</th><th class="num">PASS</th><th class="num">FAIL</th><th class="num">STATA RULE</th><th class="num">ROUNDING</th><th class="num">N/A CHECK</th><th class="num">Pass rate</th></tr>' +
-    R.perInd.map(function (p) { return '<tr><td><b>' + p.code + '</b> ' + esc(p.name) + '</td><td class="num">' + p.n + '</td><td class="num">' + p.pass + '</td><td class="num">' + (p.fail ? '<b style="color:#b42318">' + p.fail + '</b>' : 0) + '</td><td class="num">' + (p.stata ? '<b style="color:#9a6200">' + p.stata + '</b>' : 0) + '</td><td class="num">' + p.round + '</td><td class="num">' + p.na + '</td><td class="num">' + pct(p.pass, p.n) + '</td></tr>'; }).join('') + '</table>';
-  h += '<h2>4. Test runs' + (final ? '' : ' in this period') + '</h2>' + (R.runs.length ? '<table><tr><th>Run</th><th>Family ID</th><th>Test instance</th><th>Date</th><th>Tester</th><th>Mode</th><th>Status</th><th class="num">Expected total / LOWB</th><th class="num">App total</th><th class="num">4PsF total</th><th class="num">Pass / issues</th></tr>' +
-    R.runs.map(function (r) { return '<tr><td>' + esc(r['Run ID']) + '</td><td>' + esc(r['Family ID (HHID)']) + '</td><td>' + esc(instanceName(r.Environment) || 'Unspecified') + '</td><td>' + esc(runDate(r)) + '</td><td>' + esc(r.Tester) + '</td><td>' + esc(r.Mode) + '</td><td>' + esc(r.Status) + '</td><td class="num">' + fmt(r['Expected total (target)'], 4) + ' / L' + esc(r['Expected LOWB']) +
+  h += '<h2>3. Results by indicator</h2><table><tr><th>Indicator</th><th class="num">Checks</th><th class="num">PASS</th><th class="num">FAIL</th><th class="num">STATA RULE</th><th class="num">ROUNDING</th><th class="num">NOT SCORED</th><th class="num">N/A CHECK</th><th class="num">Pass rate</th></tr>' +
+    R.perInd.map(function (p) { return '<tr><td><b>' + p.code + '</b> ' + esc(p.name) + '</td><td class="num">' + p.n + '</td><td class="num">' + p.pass + '</td><td class="num">' + (p.fail ? '<b style="color:#b42318">' + p.fail + '</b>' : 0) + '</td><td class="num">' + (p.stata ? '<b style="color:#9a6200">' + p.stata + '</b>' : 0) + '</td><td class="num">' + p.round + '</td><td class="num">' + p.ns + '</td><td class="num">' + p.na + '</td><td class="num">' + pct(p.pass, p.n) + '</td></tr>'; }).join('') + '</table>';
+  h += '<h2>4. Test runs' + (final ? '' : ' in this period') + '</h2>' + (R.runs.length ? '<table><tr><th>Run</th><th>Family ID</th><th>Test instance</th><th>App build</th><th>Date</th><th>Tester</th><th>Mode</th><th>Status</th><th class="num">Expected total / LOWB</th><th class="num">App total</th><th class="num">4PsF total</th><th class="num">Pass / issues</th></tr>' +
+    R.runs.map(function (r) { return '<tr><td>' + esc(r['Run ID']) + '</td><td>' + esc(r['Family ID (HHID)']) + '</td><td>' + esc(instanceName(r.Environment) || 'Unspecified') + '</td><td>' + esc(r['SWDI App version'] || '—') + '</td><td>' + esc(runDate(r)) + '</td><td>' + esc(r.Tester) + '</td><td>' + esc(r.Mode) + '</td><td>' + esc(r.Status) + '</td><td class="num">' + fmt(r['Expected total (target)'], 4) + ' / L' + esc(r['Expected LOWB']) +
       '</td><td class="num">' + fmt(r['SWDI App total'], 4) + '</td><td class="num">' + fmt(r['4Ps Forward total'], 4) + '</td><td class="num">' + esc(r['Checks passed']) + ' / ' + esc(r['Checks not passed']) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">No runs in this period.</p>');
   var byNeed = {}; R.missing.forEach(function (s) { (byNeed[s.needs] = byNeed[s.needs] || []).push(s); });
   h += '<h2>5. Coverage still needed (' + R.missing.length + ' scenarios)</h2>' + (R.missing.length ? '<p class="muted">Use this to choose next week\'s households: the "Needs" column says what kind of member the household must have.</p><table><tr><th>Needs</th><th class="num">Scenarios</th><th>Examples</th></tr>' +
@@ -1653,8 +1694,8 @@ function reportHTML(R, det) {
     R.openRules.map(function (o) { return '<tr><td>' + o.s.ind + '</td><td>' + esc(o.s.desc) + '</td><td class="num">' + o.runs + '</td></tr>'; }).join('') +
     '<tr><td>—</td><td>Indicators with no eligible member (N/A): how the platform scores them</td><td class="num">' + R.naChecks + ' check(s)</td></tr></table>';
   if (final) {
-    var openF = R.findings.filter(function (f) { return f.verdict === 'FAIL' || f.verdict === 'STATA RULE' || f.verdict === 'ROUNDING'; }).length;
-    h += '<h2>7. Completion status</h2><ul><li>Scenario coverage: <b>' + pct(R.covered, R.total) + '</b> (' + R.covered + ' of ' + R.total + ').</li><li>Open findings: <b>' + openF + '</b> (FAIL, STATA RULE or ROUNDING groups).</li>' +
+    var openF = R.findings.filter(function (f) { return f.verdict === 'FAIL' || f.verdict === 'STATA RULE' || f.verdict === 'ROUNDING' || f.verdict === 'NOT SCORED'; }).length;
+    h += '<h2>7. Completion status</h2><ul><li>Scenario coverage: <b>' + pct(R.covered, R.total) + '</b> (' + R.covered + ' of ' + R.total + ').</li><li>Open findings: <b>' + openF + '</b> (FAIL, STATA RULE, ROUNDING or NOT SCORED groups).</li>' +
       '<li>Runs verified in 4Ps Forward: <b>' + R.verified4pf + '</b> of ' + R.runs.length + '.</li><li>Open rule confirmations: <b>' + R.openRules.length + '</b>.</li></ul>' +
       '<p class="muted">Scoring can be signed off when coverage is complete (or the remaining scenarios are explicitly waived), every finding is fixed and re-tested to PASS, and SCMD has confirmed the open rules.</p>' +
       '<table style="margin-top:12px"><tr><th>Prepared by</th><th>Reviewed by</th><th>Approved by</th></tr><tr><td style="height:48px"></td><td></td><td></td></tr></table>';

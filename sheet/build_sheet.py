@@ -34,7 +34,7 @@ def sheet(title, headers, widths, rows=(), first=False):
     return ws
 
 def verdict_cf(ws, rng):
-    for v, f in (('PASS', GREEN), ('FAIL', RED), ('STATA RULE', AMBER), ('ROUNDING', AMBER), ('N/A CHECK', BLUE), ('CHECK', BLUE)):
+    for v, f in (('PASS', GREEN), ('FAIL', RED), ('STATA RULE', AMBER), ('ROUNDING', AMBER), ('NOT SCORED', BLUE), ('N/A CHECK', BLUE), ('CHECK', BLUE)):
         ws.conditional_formatting.add(rng, CellIsRule(operator='equal', formula=['"%s"' % v], fill=f))
 
 # Guide
@@ -94,7 +94,7 @@ for r in ws.iter_rows(min_row=2): r[3].alignment = WRAP
 
 # Criteria
 NOTES = {'A': 'BRVD Scoring Rules rows 8 and 10: the diploma test uses the recorded gradel code, and the family average includes members aged 18 or older.', 'C': 'Stata: family size = all captured members − OFW; under-15 income counted; no imputed rent.',
-         'E': 'Stata counts insurance and accounts separately.', 'F': 'Stata Level 1 has no "got sick" qualifier.', 'G': 'Stata: not sick → 3 even if confined/chronic.',
+         'E': 'Stata counts insurance and accounts separately.', 'G': 'Stata: not sick → 3 even if confined/chronic.',
          'H': 'Stata ignores overweightind; moderate overwrites severe.', 'I': 'Stata keeps 11/12 in the > 30 min rule; blank minutes count as > 30.',
          'J': 'Stata precedence: any toilet with shared = No passes the Level 2 line.', 'L': 'Stata overwrite turns all-No into 2.', 'O': 'Stata overwrite ignores hazard-prone.',
          'P': 'Stata overwrite ignores hazard-prone.', 'U': 'Stata: any resolved problem overwrites to 3.',

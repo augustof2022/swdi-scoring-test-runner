@@ -257,3 +257,58 @@ test('verdicts: employable skill case (policy 2.3333, Stata 1.0000, 4Ps Forward 
   assert.equal(mix.switched.length, 1);
   assert.deepEqual([mix.switched[0].from, mix.switched[0].to], [3, 1]);
 });
+
+test('did not want to avail (99) and albularyo/hilot (4) are Level 1 whether the member was sick or not', () => {
+  for (const reason of [99, 4]) for (const sick of [1, 2]) {
+    const b = E.scoreBoth(hh([person(1, 24, { sickind: sick, avail_med: 2, ynotavail_med: reason })]), { thresholds: TH });
+    assert.equal(b.target.indicators.F.level, 1, reason + '/' + sick);
+    assert.equal(b.stata.indicators.F.level, 1);
+  }
+  // RUN-20261125-01: 1, 1, 1, 2, 1, 2 → 8 ÷ 6; the member who was not sick and did not want to avail counts.
+  const ans = [[1, 4], [2, 99], [1, 4], [1, 1], [1, 4], [1, 3]];
+  const run = E.scoreBoth(hh(ans.map(([sick, y], i) => person(i + 1, 24, { sickind: sick, avail_med: 2, ynotavail_med: y }))), { thresholds: TH });
+  close(run.target.indicators.F.level, 8 / 6);
+  assert.equal(run.target.indicators.F.members[1].level, 1);
+  assert.ok(!run.divergent.includes('F'));
+  // Reason 5 (did not need) stays Level 3; 1-3 stay Level 2.
+  assert.equal(E.score(hh([person(1, 24, { sickind: 2, avail_med: 2, ynotavail_med: 5 })])).indicators.F.level, 3);
+  for (const y of [1, 2, 3]) assert.equal(E.score(hh([person(1, 24, { sickind: 2, avail_med: 2, ynotavail_med: y })])).indicators.F.level, 2);
+});
+
+test('DRRM: not recovered is Level 1 with 1-2 items; partially recovered with 1-2 items stays Level 2', () => {
+  const base = { disastkit: '', disasknow_hotline: 1, disasplan: 2, emersavings: 1, location: 2, gida: 2, typhoon: 1 };
+  const y = r => E.scoreBoth(hh([person(1, 40)], Object.assign({}, base, { typhoon_r: r })), { thresholds: TH });
+  assert.equal(y(3).target.indicators.Y.level, 1);
+  assert.ok(y(3).target.indicators.Y.branches.includes('Y.L1.affected_not_recovered'));
+  assert.equal(y(3).stata.indicators.Y.level, 2);
+  assert.equal(y(2).target.indicators.Y.level, 2);
+  assert.equal(y(1).target.indicators.Y.level, 2);
+});
+
+test('digital literacy: None in all five groups gives no level, is not an activity, and plans as None', () => {
+  for (const v of ['0', 0, '']) {
+    const m = E.score(hh([person(1, 30, { internet: 1, digiact: v })]), { thresholds: TH }).indicators.M;
+    assert.equal(m.level, null);
+    assert.ok(m.branches.includes('M.chk.internet_but_no_activity'));
+    assert.ok(!m.branches.some(b => b.startsWith('M.act.')));
+  }
+  assert.match(E.score(hh([person(1, 30, { internet: 1, digiact: '0' })])).indicators.M.members[0].why, /None in all five/);
+  assert.equal(E.score(hh([person(1, 30, { internet: 1, digiact: '0;1' })])).indicators.M.level, 2);
+  assert.equal(F.LISTS.digiact[0], 'None in all five groups');
+  assert.ok(PL.memberCands({ age: 30 }).every(c => c.ind !== 'M' || Number(c.patch.internet) !== 1 || c.patch.digiact !== ''));
+  const C = require('../engine/swdi-coverage.js');
+  const sig = v => C.signature('M', { hh: {}, members: [{ no: 1, age: 30, internet: 1, digiact: v }] });
+  assert.equal(sig('0'), sig(''));   // runs saved before the None choice keep the same scoring inputs
+  assert.notEqual(sig('0'), sig('1'));
+});
+
+test('employable skills: None (code 0) is never counted as a skill', () => {
+  assert.equal(E.score(hh([person(1, 30, { skills_n: 0 })])).indicators.A.level, 1);
+  assert.equal(E.score(hh([person(1, 30, { skills_n: '', skills: '0' })])).indicators.A.level, 1);
+});
+
+test('decimals cut instead of rounded are ROUNDING when the rules agree, FAIL when they do not', () => {
+  assert.deepEqual(judge({ obs: 1.66, exp: 5 / 3, stata: 5 / 3, tol: 0.005, dp: 2 }), { verdict: 'ROUNDING', basis: 'truncated_decimals' });
+  assert.equal(judge({ obs: 1.67, exp: 5 / 3, stata: 5 / 3, tol: 0.005 + 1e-9, dp: 2 }).verdict, 'PASS');
+  assert.equal(judge({ obs: 1.66, exp: 5 / 3, stata: 2, tol: 0.005, dp: 2 }).verdict, 'FAIL');
+});
