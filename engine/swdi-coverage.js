@@ -41,7 +41,8 @@
   const multi = new Set(['skills','digiact','vaccine','gvbind','disastkit']);
   function value(x, field) {
     if (x == null || x === '') return '';
-    if (multi.has(field)) return E.arr(x).sort((a,b) => a-b).join(';');
+    // 0 = "None": the same scoring input as no activity group.
+    if (multi.has(field)) return E.arr(x).filter(n => field !== 'digiact' || n !== 0).sort((a,b) => a-b).join(';');
     const n = E.num(x);
     return n === null ? String(x) : n;
   }
