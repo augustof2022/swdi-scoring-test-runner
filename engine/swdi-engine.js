@@ -38,7 +38,7 @@
     { code: 'L', key: 'literacy', name: 'Functional literacy (members aged 5-64)', dim: 'SA', w: 0.0625, scope: 'member', agg: 'AVG', cov: '5-64',
       criteria: { 1: 'Cannot read, write and count (5-9) / and understand (10-64)', 2: 'Difficulty in at least one but not all', 3: 'Able to read, write and count (5-9) / and understand simple messages (10-64)' } },
     { code: 'M', key: 'diglit', name: 'Digital Literacy (members aged 10-64)', dim: 'SA', w: 0.0625, scope: 'member', agg: 'AVG', cov: '10-64',
-      criteria: { 1: 'Did not use the internet in the past 3 months', 2: 'Used the internet; at least 1 activity under (a) Information and data literacy only', 3: 'Used the internet; at least 1 activity under (b) Communication, (c) Content creation, (d) Safety or (e) Problem solving' } },
+      criteria: { 1: 'Did not use the internet in the past 3 months, or used it but did None of the five activity groups (SCMD)', 2: 'Used the internet; at least 1 activity under (a) Information and data literacy only', 3: 'Used the internet; at least 1 activity under (b) Communication, (c) Content creation, (d) Safety or (e) Problem solving' } },
     { code: 'N', key: 'school', name: 'School enrolment/attendance (children aged 3-18)', dim: 'SA', w: 0.1250, scope: 'member', agg: 'AVG', cov: '3-18',
       criteria: { 1: 'Not currently enrolled, or enrolled with attendance below 70%', 2: 'Enrolled, attendance at least 70% but below 85%', 3: 'Enrolled, attendance at least 85%' } },
     { code: 'O', key: 'roof', name: 'Construction materials of the roof', dim: 'SA', w: 0.0046, scope: 'family', agg: 'HH', cov: 'household',
@@ -267,19 +267,22 @@
     return { level: lvl, br: br, extra: extra, why: why };
   }
 
-  function mDigital(m) {
+  function mDigital(m, rs) {
     var a = age(m);
     if (a === null || a < 10) return ex('M.excl.under10', 'age ' + a + ' — outside coverage (10-64)');
     if (a > 64) return ex('M.excl.65plus', 'age ' + a + ' — outside coverage (10-64)');
-    // 0 = "None" selected in all five activity groups.
+    // 0 = "None" selected in all five activity groups: Level 1 (SCMD, 25 Nov 2026). The Stata command has no line for it.
+    // Blank = not recorded: no level, so a member who was not assessed stays out of the average.
     var i = num(m.internet), picked = arr(m.digiact), d = picked.filter(function (x) { return x >= 1 && x <= 5; }), lvl = null, br = 'M.unanswered';
     if (i === 2) { lvl = 1; br = 'M.L1.no_internet'; }
+    var none = i === 1 && !d.length && picked.indexOf(0) >= 0;
+    if (none) { br = 'M.chk.internet_but_no_activity'; if (rs !== 'stata') lvl = 1; }
     if (i === 1 && d.indexOf(1) >= 0) { lvl = 2; br = 'M.L2.info_data_literacy_only'; }
     if (i === 1 && d.some(function (x) { return x >= 2 && x <= 5; })) { lvl = 3; br = 'M.L3.higher_activity'; }
     var why = 'used internet: ' + yn(i) + (i === 1 ? ', activity groups: ' + (d.length ? d.join(', ') : picked.indexOf(0) >= 0 ? 'None in all five' : 'not recorded') : '');
-    if (i === 1 && !d.length) why += ' — no rule assigns a level';
+    if (none) why += rs === 'stata' ? ' — no Stata line assigns a level' : ' — Level 1';
+    else if (i === 1 && !d.length) why += ' — activities not recorded, cannot be scored';
     var extra = d.map(function (x) { return 'M.act.' + x; });
-    if (i === 1 && !d.length) extra.push('M.chk.internet_but_no_activity');
     if (a === 10 || a === 64) extra.push('M.bnd.age_' + a);
     return { level: lvl, br: br, extra: extra, why: why };
   }

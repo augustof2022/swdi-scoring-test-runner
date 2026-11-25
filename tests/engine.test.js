@@ -285,21 +285,30 @@ test('DRRM: not recovered is Level 1 with 1-2 items; partially recovered with 1-
   assert.equal(y(1).target.indicators.Y.level, 2);
 });
 
-test('digital literacy: None in all five groups gives no level, is not an activity, and plans as None', () => {
-  for (const v of ['0', 0, '']) {
-    const m = E.score(hh([person(1, 30, { internet: 1, digiact: v })]), { thresholds: TH }).indicators.M;
-    assert.equal(m.level, null);
-    assert.ok(m.branches.includes('M.chk.internet_but_no_activity'));
-    assert.ok(!m.branches.some(b => b.startsWith('M.act.')));
+test('digital literacy: None in all five groups is Level 1; activities not recorded give no level', () => {
+  for (const v of ['0', 0]) {
+    const b = E.scoreBoth(hh([person(1, 30, { internet: 1, digiact: v }), person(2, 31, { internet: 1, digiact: '1' })]), { thresholds: TH });
+    assert.equal(b.target.indicators.M.members[0].level, 1);
+    assert.equal(b.target.indicators.M.level, 1.5);
+    assert.match(b.target.indicators.M.members[0].why, /None in all five — Level 1/);
+    assert.ok(b.target.indicators.M.branches.includes('M.chk.internet_but_no_activity'));
+    assert.ok(!b.target.indicators.M.branches.includes('M.act.0'));
+    assert.equal(b.stata.indicators.M.level, 2);   // Stata leaves the member out
+    assert.ok(b.divergent.includes('M'));
   }
-  assert.match(E.score(hh([person(1, 30, { internet: 1, digiact: '0' })])).indicators.M.members[0].why, /None in all five/);
+  // Not recorded: the member is not scored (GitLab #52) and the scenario is not exercised.
+  const blank = E.score(hh([person(1, 30, { internet: 1, digiact: '' }), person(2, 31, { internet: 1, digiact: '1' })])).indicators.M;
+  assert.equal(blank.members[0].level, null); assert.equal(blank.level, 2);
+  assert.ok(!blank.branches.includes('M.chk.internet_but_no_activity'));
+  // None is ignored when a group is also recorded; internet = No stays Level 1.
   assert.equal(E.score(hh([person(1, 30, { internet: 1, digiact: '0;1' })])).indicators.M.level, 2);
+  assert.equal(E.score(hh([person(1, 30, { internet: 1, digiact: '0;4' })])).indicators.M.level, 3);
+  assert.equal(E.score(hh([person(1, 30, { internet: 2, digiact: '0' })])).indicators.M.level, 1);
   assert.equal(F.LISTS.digiact[0], 'None in all five groups');
   assert.ok(PL.memberCands({ age: 30 }).every(c => c.ind !== 'M' || Number(c.patch.internet) !== 1 || c.patch.digiact !== ''));
   const C = require('../engine/swdi-coverage.js');
   const sig = v => C.signature('M', { hh: {}, members: [{ no: 1, age: 30, internet: 1, digiact: v }] });
-  assert.equal(sig('0'), sig(''));   // runs saved before the None choice keep the same scoring inputs
-  assert.notEqual(sig('0'), sig('1'));
+  assert.notEqual(sig('0'), sig('')); assert.equal(sig('0'), sig(0));
 });
 
 test('employable skills: None (code 0) is never counted as a skill', () => {

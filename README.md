@@ -120,6 +120,7 @@ Confirmed on 25 November 2026:
 * DRRM: "not recovered" is Level 1, also with 1-2 items
 * nutrition: stunting, wasting, underweight and overweight for each child, then the average (OI-090)
 * employable skills: members aged 15 and above
+* digital literacy: internet = Yes with None in all five activity groups is Level 1; activities not recorded give no level
 
 ## Open rules to confirm with SCMD
 
@@ -127,5 +128,4 @@ These show up as **Needs DSWD confirmation** or `N/A CHECK`:
 
 * how indicators with no eligible member are scored
 * improved toilet shared with other families: L2 or L3
-* internet use with None in all five activity groups
 * nutrition fields recorded as Yes/No in Odoo but as maln codes in BRVD
